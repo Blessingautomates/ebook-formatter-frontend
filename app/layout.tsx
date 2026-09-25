@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ebook Formatter",
+  title: "Ebook Formatter — Format Print-Ready eBooks in Minutes",
   description:
-    "Analyze a manuscript, correct it, and export a print-ready PDF, EPUB, DOCX, RTF or TXT.",
+    "Upload a manuscript to measure it, review the spelling findings, pick a genre, and export a print-ready PDF, EPUB, DOCX, RTF or TXT.",
 };
 
 export default function RootLayout({

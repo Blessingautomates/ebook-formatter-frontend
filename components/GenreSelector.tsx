@@ -27,8 +27,8 @@ export function GenreSelector({
             onClick={() => onChange(option.id)}
             className={`rounded-xl border p-3.5 text-left transition-colors ${
               selected
-                ? "border-accent bg-accent-soft"
-                : "border-line bg-surface-2 hover:border-line-strong"
+                ? "border-accent bg-accent-soft ring-1 ring-accent"
+                : "border-line-strong bg-surface-2 hover:border-accent"
             }`}
           >
             <div className="flex items-baseline justify-between gap-2">

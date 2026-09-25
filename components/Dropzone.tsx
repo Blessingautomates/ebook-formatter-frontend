@@ -77,7 +77,7 @@ export function Dropzone({
           dragging
             ? "border-accent bg-accent-soft"
             : "border-line-strong bg-surface-2 hover:border-accent"
-        } ${busy ? "pointer-events-none opacity-60" : ""}`}
+        } ${busy ? "pointer-events-none" : ""}`}
       >
         <input
           type="file"

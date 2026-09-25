@@ -36,7 +36,7 @@ export function ExportHub({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface-2 p-4">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line-strong bg-surface-2 p-4">
         <button
           type="button"
           className="btn btn-primary px-5 py-2.5 text-base"

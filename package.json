@@ -20,5 +20,8 @@
     "@types/react-dom": "^19.1.0",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.0"
+  },
+  "optionalDependencies": {
+    "lightningcss-android-arm64": "^1.33.0"
   }
 }

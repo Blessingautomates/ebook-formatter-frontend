@@ -78,7 +78,7 @@ export function TypoDrawer({
   const truncated = totalCount > listedCount;
 
   return (
-    <div className="mt-4 rounded-xl border border-line bg-surface-2">
+    <div className="mt-4 rounded-xl border border-line-strong bg-surface-2">
       <button
         type="button"
         onClick={onToggle}

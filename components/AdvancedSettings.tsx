@@ -77,7 +77,7 @@ export function AdvancedSettings({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="rounded-xl border border-line bg-surface-2">
+    <div className="rounded-xl border border-line-strong bg-surface-2">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -186,8 +186,8 @@ export function AdvancedSettings({
                     onClick={() => onChange({ trimSize: option.id })}
                     className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${
                       selected
-                        ? "border-accent bg-accent-soft"
-                        : "border-line bg-surface hover:border-line-strong"
+                        ? "border-accent bg-accent-soft ring-1 ring-accent"
+                        : "border-line-strong bg-surface hover:border-accent"
                     }`}
                   >
                     <span

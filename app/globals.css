@@ -1,9 +1,20 @@
 @import "tailwindcss";
+@config "../tailwind.config.js";
 
 /*
- * Tokens are declared once and re-declared for dark mode. Tailwind utilities
- * reference them as var(--color-*), so overriding the variables under the media
- * query flips every utility at once, with no dark: variants in the components.
+ * The literal Platinum / Obsidian / Gold scales live in tailwind.config.js.
+ * This block holds the *semantic* tokens the components reference, remapped
+ * onto those scales. They have to be declared here rather than only in the JS
+ * config because they must exist as CSS variables: .btn-primary and .card read
+ * them as var(--color-*), and AdvancedSettings.tsx reads one from an arbitrary
+ * value (`accent-[var(--color-accent)]`).
+ *
+ * Remapping the values rather than renaming the tokens is what keeps this
+ * rebrand to one file — no component className had to change for it.
+ *
+ * These are the LIGHT values. Contrast is held above 4.5:1 throughout: the old
+ * faint #9a9081 on paper was ~2.6:1, and #6d6558 muted was ~5.3:1 but read as
+ * washed out against the faint borders it sat between.
  */
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
@@ -14,14 +25,29 @@
   --color-paper: #f7f4ee;
   --color-surface: #ffffff;
   --color-surface-2: #fbf9f5;
-  --color-ink: #1b1a17;
-  --color-muted: #6d6558;
-  --color-faint: #9a9081;
-  --color-line: #e5dfd3;
-  --color-line-strong: #d3cab8;
-  --color-accent: #8a4b2a;
-  --color-accent-ink: #ffffff;
-  --color-accent-soft: #f5eae1;
+  --color-ink: #0f172a;
+  --color-muted: #334155;
+  --color-faint: #475569;
+  /* Crisp platinum/slate, rather than a border that dissolves into the paper.
+     The old #e5dfd3 sat at ~1.2:1 against paper and read as no border at all. */
+  --color-line: #cbd5e1;
+  --color-line-strong: #94a3b8;
+  /*
+   * A stronger border, used only where the boundary identifies a *control*
+   * (button, input) rather than decorating a container. Those have to clear
+   * WCAG 1.4.11's 3:1; #94a3b8 is 2.6:1 on white, so it is not enough there.
+   * #7d8ea6 is 3.3:1 on white and 3.0:1 on paper.
+   */
+  --color-control: #7d8ea6;
+  /*
+   * Bronze-gold rather than #d4af37: the accent is used for *text* as well as
+   * fills (GenreSelector's "Selected", AnalysisDashboard's "Review →"), and
+   * bright gold on paper is only ~1.9:1. The gold brand lives in the button
+   * gradient instead, which carries dark ink on top.
+   */
+  --color-accent: #8a6a1f;
+  --color-accent-ink: #0b0f17;
+  --color-accent-soft: #faf3e2;
   --color-ok: #2f6b4f;
   --color-ok-soft: #e6f1ea;
   --color-warn: #8a6a1f;
@@ -30,24 +56,29 @@
   --color-danger-soft: #f8e8e5;
 }
 
+/*
+ * The premium obsidian theme. Same token names, so every utility flips at once
+ * and no component carries a dark: variant.
+ */
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-paper: #14130f;
-    --color-surface: #1c1a16;
-    --color-surface-2: #221f1a;
-    --color-ink: #f0ece3;
-    --color-muted: #a89f8e;
-    --color-faint: #7c7466;
-    --color-line: #322e26;
-    --color-line-strong: #443e33;
-    --color-accent: #d98a5f;
-    --color-accent-ink: #201a14;
-    --color-accent-soft: #2e2119;
-    --color-ok: #7fc39d;
-    --color-ok-soft: #1a2a20;
-    --color-warn: #dcb765;
-    --color-warn-soft: #2b2415;
-    --color-danger: #e08a7d;
+    --color-paper: #0b0f17; /* obsidian-900 */
+    --color-surface: #111827; /* obsidian-800 */
+    --color-surface-2: #1e293b; /* ink-slate — insets read as raised, not sunk */
+    --color-ink: #f8fafc; /* platinum-50  ~17:1 */
+    --color-muted: #cbd5e1; /* platinum-300 ~13:1 */
+    --color-faint: #94a3b8; /* platinum-500 ~5.7:1 on surface-2 */
+    --color-line: #1e293b; /* slate-800 */
+    --color-line-strong: #334155; /* slate-700 */
+    --color-control: #64748b; /* slate-500 — 3.8:1 on the card surface */
+    --color-accent: #d4af37; /* gold-500, ~9.1:1 on obsidian */
+    --color-accent-ink: #0b0f17;
+    --color-accent-soft: #2b2410;
+    --color-ok: #4ade80;
+    --color-ok-soft: #0f2a1c;
+    --color-warn: #e5c158; /* gold-400 */
+    --color-warn-soft: #2b2410;
+    --color-danger: #f87171;
     --color-danger-soft: #2e1a17;
   }
 }
@@ -80,13 +111,25 @@ body {
     border-radius: 0.875rem;
   }
 
+  /*
+   * The state for a step whose turn has not come. It is carried by a dashed
+   * border on the inset surface instead of a reduced opacity, so it still reads
+   * as deliberate at a glance rather than as something that failed to load.
+   * Applied by primitives.tsx alongside `card`.
+   */
+  .card-inactive {
+    background: var(--color-surface-2);
+    border-style: dashed;
+    border-color: var(--color-line-strong);
+  }
+
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
     border-radius: 0.625rem;
-    border: 1px solid var(--color-line-strong);
+    border: 1px solid var(--color-control);
     background: var(--color-surface);
     color: var(--color-ink);
     padding: 0.5rem 0.9rem;
@@ -95,7 +138,8 @@ body {
     line-height: 1.25;
     cursor: pointer;
     transition: border-color 0.15s ease, color 0.15s ease,
-      background-color 0.15s ease, transform 0.05s ease;
+      background-color 0.15s ease, background-image 0.15s ease,
+      transform 0.05s ease;
   }
 
   .btn:hover:not(:disabled) {
@@ -107,20 +151,45 @@ body {
     transform: translateY(1px);
   }
 
+  /*
+   * Disabled is a filled, legible state rather than opacity: at 0.5 the label
+   * dropped below 4.5:1 and the control read as broken instead of unavailable.
+   */
   .btn:disabled {
-    opacity: 0.5;
+    background: var(--color-surface-2);
+    border-color: var(--color-line);
+    color: var(--color-muted);
+    box-shadow: none;
     cursor: not-allowed;
   }
 
+  /*
+   * Warm gold, with a platinum hover: the fill resolves to platinum on hover
+   * while the label stays obsidian, so the contrast holds in both directions.
+   * Gradient stops are literal hex rather than var(--color-gold-*) because
+   * those scales are declared in the JS config, not in @theme.
+   */
   .btn-primary {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
+    background-image: linear-gradient(
+      135deg,
+      #e5c158 0%,
+      #d4af37 45%,
+      #b89228 100%
+    );
+    border-color: #b89228;
     color: var(--color-accent-ink);
+    font-weight: 600;
+    box-shadow: 0 1px 0 rgb(255 255 255 / 0.25) inset;
   }
 
   .btn-primary:hover:not(:disabled) {
-    filter: brightness(1.08);
-    color: var(--color-accent-ink);
+    background-image: linear-gradient(135deg, #f1f5f9 0%, #cbd5e1 100%);
+    border-color: #cbd5e1;
+    color: #0b0f17;
+  }
+
+  .btn-primary:disabled {
+    background-image: none;
   }
 
   .btn-sm {
@@ -145,7 +214,7 @@ body {
   .field {
     width: 100%;
     border-radius: 0.625rem;
-    border: 1px solid var(--color-line-strong);
+    border: 1px solid var(--color-control);
     background: var(--color-surface);
     color: var(--color-ink);
     padding: 0.5rem 0.7rem;
@@ -154,7 +223,8 @@ body {
 
   .field:focus {
     border-color: var(--color-accent);
-    outline: none;
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
   }
 
   .label {
@@ -163,7 +233,7 @@ body {
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--color-faint);
+    color: var(--color-muted);
     margin-bottom: 0.35rem;
   }
 

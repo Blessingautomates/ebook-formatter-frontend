@@ -1,259 +1,250 @@
-"use client";
+import Link from "next/link";
 
-import { useMemo, useState } from "react";
+import { ACCEPTED_EXTENSIONS } from "@/lib/api";
+import { GENRE_OPTIONS, TRIM_OPTIONS } from "@/lib/genres";
 
-import { AdvancedSettings } from "@/components/AdvancedSettings";
-import { AnalysisDashboard } from "@/components/AnalysisDashboard";
-import { Dropzone } from "@/components/Dropzone";
-import { ExportHub } from "@/components/ExportHub";
-import { GenreSelector } from "@/components/GenreSelector";
-import { TypoDrawer } from "@/components/TypoDrawer";
-import { Notice, Step } from "@/components/primitives";
-import { analyzeBook, exportBook } from "@/lib/api";
-import { applyFixes, buildRows, type Decision, type Decisions } from "@/lib/typos";
-import type { BookAnalysis, ExportFormat, ExportSettings } from "@/lib/types";
+/**
+ * The editorial landing page. A server component with no hooks and no data
+ * fetching, so it prerenders to static HTML — the CTA is the only thing on it
+ * that does anything, and it goes to /dashboard.
+ *
+ * Both CTAs point at /dashboard. There is no auth in this app (the analysis and
+ * export endpoints are open), so a "Sign Up" that collected credentials would be
+ * a form that goes nowhere.
+ */
 
-type Status = "idle" | "analyzing" | "ready";
+const FEATURES = [
+  {
+    title: "Measured the moment it lands",
+    body: "Drop a manuscript and get the word count, chapter count and estimated page count back, plus the language and writing system the text was detected as. No configuring a project first.",
+  },
+  {
+    title: "Typos reviewed before they ship",
+    body: "Every suspected misspelling is listed with suggestions, its chapter, its line and the surrounding words. Accept or ignore each one, and the corrections go into the exported file rather than dying in a report.",
+  },
+  {
+    title: "Nine genre typesettings",
+    body: "Fiction, non-fiction, academic, journal, comic and minimal, plus poetry, technical and children's. Each sets its own typography, leading and page furniture.",
+  },
+  {
+    title: "Five export formats",
+    body: "A print-ready PDF rendered with the genre's print stylesheet, or convert to EPUB, DOCX, RTF or TXT from the same analysis.",
+  },
+];
 
-const INITIAL_SETTINGS: ExportSettings = {
-  title: "",
-  author: "",
-  genre: "fiction",
-  trimSize: "6x9",
-  customFont: "",
-  fontSize: null,
-};
+const FORMATS = [
+  { label: "PDF", note: "Print-ready, WeasyPrint", primary: true },
+  { label: "EPUB", note: "Reflowable, for Kindle and Apple Books" },
+  { label: "DOCX", note: "Editable in Word" },
+  { label: "RTF", note: "Editable in most word processors" },
+  { label: "TXT", note: "Plain text, wrapped at 72 columns" },
+];
 
-/** "my-book_draft.docx" becomes "my book draft". */
-function titleFromFilename(name: string): string {
-  const base = name.replace(/\.[^.]+$/, "");
-  return base.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim() || "Untitled";
-}
-
-function messageFor(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
-
-export default function Page() {
-  const [file, setFile] = useState<File | null>(null);
-  const [analysis, setAnalysis] = useState<BookAnalysis | null>(null);
-  const [status, setStatus] = useState<Status>("idle");
-  const [error, setError] = useState<string | null>(null);
-
-  const [decisions, setDecisions] = useState<Decisions>({});
-  const [typosOpen, setTyposOpen] = useState(false);
-
-  const [settings, setSettings] = useState<ExportSettings>(INITIAL_SETTINGS);
-  const [exporting, setExporting] = useState<ExportFormat | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
-  const [lastExport, setLastExport] = useState<string | null>(null);
-
-  const rows = useMemo(() => buildRows(analysis?.typos ?? []), [analysis]);
-
-  /**
-   * The manuscript with every accepted correction applied. Recomputed as the
-   * decisions change; null when the server did not return the text, in which
-   * case the export falls back to re-uploading the original file.
-   */
-  const corrected = useMemo(() => {
-    const text = analysis?.manuscript_text;
-    if (!text) return { text: null, applied: 0 };
-    const result = applyFixes(text, rows, decisions);
-    return { text: result.text, applied: result.applied };
-  }, [analysis, rows, decisions]);
-
-  function reset(): void {
-    setFile(null);
-    setAnalysis(null);
-    setStatus("idle");
-    setError(null);
-    setDecisions({});
-    setTyposOpen(false);
-    setExporting(null);
-    setExportError(null);
-    setLastExport(null);
-  }
-
-  async function handleFile(next: File): Promise<void> {
-    setFile(next);
-    setAnalysis(null);
-    setDecisions({});
-    setExportError(null);
-    setLastExport(null);
-    setError(null);
-    setStatus("analyzing");
-    setSettings((current) => ({
-      ...current,
-      title: current.title || titleFromFilename(next.name),
-    }));
-
-    try {
-      const result = await analyzeBook(next);
-      setAnalysis(result);
-      setStatus("ready");
-      // Open the drawer straight away when there is something to review.
-      setTyposOpen(result.typo_check_available && result.typo_count > 0);
-    } catch (caught) {
-      setError(messageFor(caught, "The manuscript could not be analyzed."));
-      setStatus("idle");
-    }
-  }
-
-  function decide(key: string, decision: Decision | null): void {
-    setDecisions((current) => {
-      const next = { ...current };
-      if (decision) next[key] = decision;
-      else delete next[key];
-      return next;
-    });
-  }
-
-  function bulk(keys: string[], decision: Decision | null): void {
-    setDecisions((current) => {
-      const next = { ...current };
-      for (const key of keys) {
-        if (decision) next[key] = decision;
-        else delete next[key];
-      }
-      return next;
-    });
-  }
-
-  async function handleExport(format: ExportFormat): Promise<void> {
-    if (!analysis) return;
-    setExporting(format);
-    setExportError(null);
-    setLastExport(null);
-    try {
-      const filename = await exportBook({
-        text: corrected.text,
-        file,
-        analysis,
-        settings,
-        format,
-      });
-      setLastExport(filename);
-    } catch (caught) {
-      setExportError(messageFor(caught, "The export failed."));
-    } finally {
-      setExporting(null);
-    }
-  }
-
-  const ready = analysis !== null;
-
+export default function LandingPage() {
   return (
-    <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
-      <header className="mb-8">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h1 className="font-serif text-3xl font-semibold tracking-tight">
+    <div className="min-h-screen">
+      <header className="border-b border-line">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
+          <span className="font-serif text-lg font-semibold tracking-tight">
             Ebook Formatter
-          </h1>
-          <span className="font-mono text-xs text-faint">
-            format.toolstackai.xyz
           </span>
+          <Link href="/dashboard" className="btn btn-sm">
+            Open the formatter
+          </Link>
         </div>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-          Upload a manuscript to measure it, review the spelling findings, pick a
-          genre, then export a print-ready PDF or convert to EPUB, DOCX, RTF or
-          TXT.
-        </p>
       </header>
 
-      <div className="space-y-5">
-        <Step
-          n={1}
-          title="Manuscript"
-          hint="A .docx, .md or .txt file."
-          aside={
-            file && status === "ready" ? (
-              <button type="button" className="btn btn-sm" onClick={reset}>
-                Start over
-              </button>
-            ) : null
-          }
-        >
-          <Dropzone
-            file={file}
-            busy={status === "analyzing"}
-            error={error}
-            onFile={handleFile}
-            onInvalid={setError}
-            onReset={reset}
+      <main>
+        {/* Hero */}
+        <section className="relative overflow-hidden border-b border-line">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              backgroundImage:
+                "radial-gradient(60rem 30rem at 50% -10%, rgb(212 175 55 / 0.14), transparent 70%)",
+            }}
           />
-        </Step>
+          <div className="relative mx-auto max-w-6xl px-4 py-20 text-center sm:px-6 sm:py-28">
+            <span className="chip">Manuscript to print-ready</span>
+            <h1 className="mx-auto mt-6 max-w-3xl font-serif text-4xl leading-[1.1] font-semibold tracking-tight text-balance sm:text-6xl">
+              Format Print-Ready eBooks in Minutes
+            </h1>
+            <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-muted sm:text-lg">
+              Upload a manuscript and get it measured, corrected and typeset.
+              Nine genre typesettings, five export formats, and no layout
+              software to learn.
+            </p>
 
-        {analysis ? (
-          <Step
-            n={2}
-            title="Pre-scan"
-            hint={`Measured from ${analysis.language_name}, ${analysis.script_type} script.`}
-          >
-            <AnalysisDashboard
-              analysis={analysis}
-              onOpenTypos={() => setTyposOpen((open) => !open)}
-            />
-            <TypoDrawer
-              open={typosOpen}
-              onToggle={() => setTyposOpen((open) => !open)}
-              available={analysis.typo_check_available}
-              note={analysis.typo_check_note}
-              totalCount={analysis.typo_count}
-              listedCount={analysis.typos.length}
-              rows={rows}
-              decisions={decisions}
-              onDecide={decide}
-              onBulk={bulk}
-              appliedCount={corrected.applied}
-            />
-          </Step>
-        ) : null}
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+              <Link
+                href="/dashboard"
+                className="btn btn-primary px-6 py-3 text-base"
+              >
+                Get Started
+              </Link>
+              <Link href="/dashboard" className="btn px-6 py-3 text-base">
+                Sign Up
+              </Link>
+            </div>
 
-        <Step
-          n={3}
-          title="Genre and layout"
-          hint="Sets the typography and page furniture of the export."
-          active={ready}
-        >
-          <GenreSelector
-            value={settings.genre}
-            onChange={(genre) => setSettings((s) => ({ ...s, genre }))}
-          />
-          <div className="mt-3">
-            <AdvancedSettings
-              settings={settings}
-              onChange={(patch) => setSettings((s) => ({ ...s, ...patch }))}
-            />
+            <p className="mt-5 text-xs text-faint">
+              Accepts {ACCEPTED_EXTENSIONS.join(", ")} · no account needed
+            </p>
           </div>
-        </Step>
+        </section>
 
-        <Step
-          n={4}
-          title="Export"
-          hint="Each format downloads as soon as it finishes rendering."
-          active={ready}
-        >
-          {ready ? (
-            <ExportHub
-              trimSize={settings.trimSize}
-              exporting={exporting}
-              error={exportError}
-              lastExport={lastExport}
-              onExport={handleExport}
-            />
-          ) : (
-            <Notice>Analyze a manuscript to enable export.</Notice>
-          )}
-        </Step>
-      </div>
+        {/* Value proposition */}
+        <section className="border-b border-line">
+          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+            <h2 className="font-serif text-2xl font-semibold tracking-tight sm:text-3xl">
+              Everything between the draft and the file you upload
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
+              Four steps, in the order you would actually do them.
+            </p>
 
-      <footer className="mt-10 border-t border-line pt-5 text-xs leading-relaxed text-faint">
-        Requests go to the FastAPI backend through this app&rsquo;s{" "}
-        <code className="font-mono">/api</code> proxy, so the manuscript is
-        analysed and rendered server-side. A format is unavailable if its
-        renderer is not installed on the server; the error names the missing
-        package.
+            <div className="mt-10 grid gap-4 sm:grid-cols-2">
+              {FEATURES.map((feature, index) => (
+                <div key={feature.title} className="card p-6">
+                  <span
+                    aria-hidden
+                    className="grid size-8 place-items-center rounded-full border border-accent bg-accent-soft font-mono text-sm font-semibold text-accent"
+                  >
+                    {index + 1}
+                  </span>
+                  <h3 className="mt-4 font-serif text-lg font-semibold">
+                    {feature.title}
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted">
+                    {feature.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Genres */}
+        <section className="border-b border-line">
+          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+            <h2 className="font-serif text-2xl font-semibold tracking-tight sm:text-3xl">
+              Nine typesettings, previewed in their own type
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
+              Each card shows a real specimen, set in the family and size that
+              genre's print stylesheet actually uses.
+            </p>
+
+            <ul className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {GENRE_OPTIONS.map((genre) => (
+                <li
+                  key={genre.id}
+                  className="rounded-xl border border-line bg-surface-2 p-4"
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span
+                      aria-hidden
+                      className="leading-none"
+                      style={{
+                        fontFamily: genre.specimenFont,
+                        fontSize: `${genre.specimenPt * 2}pt`,
+                      }}
+                    >
+                      Aa
+                    </span>
+                    <span className="text-[0.7rem] font-semibold tracking-wider text-faint uppercase">
+                      {genre.specimenPt} pt
+                    </span>
+                  </div>
+                  <div className="mt-3 font-serif text-base font-semibold">
+                    {genre.label}
+                  </div>
+                  <p className="mt-0.5 text-xs leading-relaxed text-muted">
+                    {genre.blurb}
+                  </p>
+                </li>
+              ))}
+            </ul>
+
+            <p className="mt-6 text-xs leading-relaxed text-faint">
+              Trim sizes:{" "}
+              {TRIM_OPTIONS.map((trim) => `${trim.label} (${trim.detail})`).join(
+                " · ",
+              )}
+              . Trim applies to the paged formats; EPUB reflows to the reader.
+            </p>
+          </div>
+        </section>
+
+        {/* Formats */}
+        <section className="border-b border-line">
+          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+            <h2 className="font-serif text-2xl font-semibold tracking-tight sm:text-3xl">
+              Export once, in the format you need
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted">
+              Rendering happens server-side, so the PDF is typeset with the real
+              print stylesheet rather than approximated in the browser.
+            </p>
+
+            <ul className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              {FORMATS.map((format) => (
+                <li
+                  key={format.label}
+                  className={`rounded-xl border p-4 ${
+                    format.primary
+                      ? "border-accent bg-accent-soft ring-1 ring-accent"
+                      : "border-line-strong bg-surface-2"
+                  }`}
+                >
+                  <div
+                    className={`font-serif text-lg font-semibold ${
+                      format.primary ? "text-accent" : ""
+                    }`}
+                  >
+                    {format.label}
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-muted">
+                    {format.note}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        {/* Closing CTA */}
+        <section>
+          <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6 sm:py-20">
+            <h2 className="font-serif text-2xl font-semibold tracking-tight sm:text-3xl">
+              Your manuscript is already written
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted">
+              The formatting is the part that shouldn&rsquo;t take a weekend.
+            </p>
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+              <Link
+                href="/dashboard"
+                className="btn btn-primary px-6 py-3 text-base"
+              >
+                Get Started
+              </Link>
+              <Link href="/dashboard" className="btn px-6 py-3 text-base">
+                Sign Up
+              </Link>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer className="border-t border-line">
+        <div className="mx-auto max-w-6xl px-4 py-8 text-xs leading-relaxed text-faint sm:px-6">
+          Ebook Formatter · format.toolstackai.xyz — manuscripts are analysed and
+          rendered server-side, and a format reports the missing package when its
+          renderer is not installed.
+        </div>
       </footer>
-    </main>
+    </div>
   );
 }

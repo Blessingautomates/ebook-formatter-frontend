@@ -11,11 +11,13 @@ export function Spinner({ className = "" }: { className?: string }) {
   );
 }
 
+// Full-strength borders: at /40 the edge of a notice dissolved into the surface
+// behind it, which is exactly the faintness this pass removes.
 const NOTICE_TONES = {
-  error: "border-danger/40 bg-danger-soft text-danger",
-  warn: "border-warn/40 bg-warn-soft text-warn",
+  error: "border-danger bg-danger-soft text-danger",
+  warn: "border-warn bg-warn-soft text-warn",
   info: "border-line-strong bg-surface-2 text-muted",
-  ok: "border-ok/40 bg-ok-soft text-ok",
+  ok: "border-ok bg-ok-soft text-ok",
 } as const;
 
 export function Notice({
@@ -38,9 +40,13 @@ export function Notice({
 }
 
 /**
- * One numbered step. Steps after the first stay dimmed until the analysis
- * exists, so the order of operations is visible without disabling everything
- * up front.
+ * One numbered step. Steps after the first stay visibly inactive until the
+ * analysis exists, so the order of operations is visible without disabling
+ * everything up front.
+ *
+ * Inactive is a dashed border on the inset surface, not a reduced opacity: at
+ * opacity-45 the hint text fell well under 4.5:1 and the whole card looked
+ * half-rendered rather than deliberately not-yet.
  */
 export function Step({
   n,
@@ -59,8 +65,8 @@ export function Step({
 }) {
   return (
     <section
-      className={`card p-5 transition-opacity sm:p-6 ${
-        active ? "" : "pointer-events-none opacity-45"
+      className={`card p-5 sm:p-6 ${
+        active ? "" : "card-inactive pointer-events-none"
       }`}
       aria-disabled={!active}
     >
@@ -68,7 +74,11 @@ export function Step({
         <div className="flex items-start gap-3">
           <span
             aria-hidden
-            className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border border-line-strong bg-surface-2 text-xs font-semibold text-muted"
+            className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border text-xs font-semibold ${
+              active
+                ? "border-accent bg-accent-soft text-accent"
+                : "border-line-strong bg-surface text-muted"
+            }`}
           >
             {n}
           </span>
