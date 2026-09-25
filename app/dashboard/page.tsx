@@ -1,16 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 import { AdvancedSettings } from "@/components/AdvancedSettings";
 import { AnalysisDashboard } from "@/components/AnalysisDashboard";
 import { Dropzone } from "@/components/Dropzone";
 import { ExportHub } from "@/components/ExportHub";
 import { GenreSelector } from "@/components/GenreSelector";
+import { ProjectsPanel } from "@/components/ProjectsPanel";
 import { TypoDrawer } from "@/components/TypoDrawer";
 import { Notice, Step } from "@/components/primitives";
 import { analyzeBook, exportBook } from "@/lib/api";
+import {
+  RECENT_PROJECT_LIMIT,
+  deleteManuscript,
+  listManuscripts,
+  saveManuscript,
+  type ManuscriptDraft,
+  type ManuscriptRecord,
+} from "@/lib/manuscripts";
+import { createClient } from "@/lib/supabase/client";
 import { applyFixes, buildRows, type Decision, type Decisions } from "@/lib/typos";
 import type { BookAnalysis, ExportFormat, ExportSettings } from "@/lib/types";
 
@@ -49,6 +60,54 @@ export default function DashboardPage() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [lastExport, setLastExport] = useState<string | null>(null);
 
+  // ---- saved projects ----
+  const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ManuscriptRecord[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
+  /** The saved row this session is editing, if any. Null means "a new one". */
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+
+  /**
+   * The lists are read in the browser rather than on the server so this stays a
+   * client component, the same as the rest of the page. Middleware has already
+   * established that there is a session, so `getUser` here is for the address to
+   * display, not for a decision.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const {
+          data: { user },
+        } = await createClient().auth.getUser();
+        if (cancelled) return;
+        setEmail(user?.email ?? null);
+
+        const rows = await listManuscripts();
+        if (!cancelled) setProjects(rows);
+      } catch (caught) {
+        if (!cancelled) {
+          setProjectsError(
+            messageFor(caught, "Your projects could not be loaded."),
+          );
+        }
+      } finally {
+        if (!cancelled) setProjectsLoading(false);
+      }
+    })();
+
+    // Without this, signing out mid-fetch would set state on a gone component.
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const rows = useMemo(() => buildRows(analysis?.typos ?? []), [analysis]);
 
   /**
@@ -73,6 +132,11 @@ export default function DashboardPage() {
     setExporting(null);
     setExportError(null);
     setLastExport(null);
+    // Starting over means starting a *new* manuscript, so the next save must
+    // insert rather than overwrite the project that was open.
+    setActiveId(null);
+    setSaveError(null);
+    setSaveNotice(null);
   }
 
   async function handleFile(next: File): Promise<void> {
@@ -143,6 +207,136 @@ export default function DashboardPage() {
 
   const ready = analysis !== null;
 
+  const openProject =
+    projects.find((project) => project.id === activeId) ?? null;
+
+  /**
+   * The row to write, or null when there is nothing to write yet.
+   *
+   * Measurements come from the live analysis when there is one. Falling back to
+   * the opened project's stored numbers is what lets someone reopen a saved
+   * manuscript, change only its genre, and save that — the file they would
+   * otherwise have to re-upload to produce measurements is not here.
+   */
+  const draft: ManuscriptDraft | null = useMemo(() => {
+    const shared = {
+      title: settings.title.trim() || "Untitled",
+      author: settings.author.trim() || null,
+      genre: settings.genre,
+      font_family: settings.customFont.trim() || null,
+      font_size: settings.fontSize,
+      trim_size: settings.trimSize,
+    };
+
+    if (analysis) {
+      return {
+        ...shared,
+        word_count: analysis.word_count,
+        chapter_count: analysis.chapter_count,
+        chapters: analysis.chapters,
+      };
+    }
+
+    if (openProject) {
+      return {
+        ...shared,
+        word_count: openProject.word_count,
+        chapter_count: openProject.chapter_count,
+        chapters: openProject.chapters,
+      };
+    }
+
+    return null;
+  }, [analysis, openProject, settings]);
+
+  async function handleSave(): Promise<void> {
+    if (!draft || saving) return;
+    const updating = activeId !== null;
+    setSaving(true);
+    setSaveError(null);
+    setSaveNotice(null);
+    try {
+      const saved = await saveManuscript(draft, activeId);
+      setActiveId(saved.id);
+      setProjects((current) =>
+        [saved, ...current.filter((project) => project.id !== saved.id)].slice(
+          0,
+          RECENT_PROJECT_LIMIT,
+        ),
+      );
+      setSaveNotice(`${updating ? "Updated" : "Saved"} “${saved.title}”.`);
+    } catch (caught) {
+      setSaveError(messageFor(caught, "The project could not be saved."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleOpenProject(record: ManuscriptRecord): void {
+    setActiveId(record.id);
+    setSettings({
+      title: record.title,
+      // Author is stored because it is part of the exported title page, not
+      // just a label on the row.
+      author: record.author ?? "",
+      genre: record.genre,
+      trimSize: record.trim_size,
+      customFont: record.font_family ?? "",
+      fontSize: record.font_size,
+    });
+    /*
+     * The stored row is not an analysis — it has no language, script or typeset
+     * page count — so it cannot stand in for one without the export reading
+     * fields that were never saved. Clearing the live analysis is what keeps
+     * the panel and the steps below describing the same book.
+     */
+    setFile(null);
+    setAnalysis(null);
+    setDecisions({});
+    setTyposOpen(false);
+    setStatus("idle");
+    setError(null);
+    setExporting(null);
+    setExportError(null);
+    setLastExport(null);
+    setSaveError(null);
+    setSaveNotice(
+      `Opened “${record.title}”. Upload the manuscript again to export it.`,
+    );
+  }
+
+  async function handleDeleteProject(record: ManuscriptRecord): Promise<void> {
+    const confirmed = window.confirm(
+      `Delete “${record.title}”? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setSaveError(null);
+    setSaveNotice(null);
+    try {
+      await deleteManuscript(record.id);
+      setProjects((current) =>
+        current.filter((project) => project.id !== record.id),
+      );
+      if (activeId === record.id) setActiveId(null);
+      setSaveNotice(`Deleted “${record.title}”.`);
+    } catch (caught) {
+      setSaveError(messageFor(caught, "The project could not be deleted."));
+    }
+  }
+
+  async function handleSignOut(): Promise<void> {
+    try {
+      await createClient().auth.signOut();
+    } catch {
+      // Leaving the page is what the user asked for. A failed token revoke
+      // should not strand them on a page they are trying to leave; the cookie
+      // is cleared locally either way.
+    }
+    router.replace("/login");
+    router.refresh();
+  }
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
       <header className="mb-8">
@@ -170,6 +364,25 @@ export default function DashboardPage() {
           TXT.
         </p>
       </header>
+
+      <div className="mb-5">
+        <ProjectsPanel
+          email={email}
+          projects={projects}
+          loading={projectsLoading}
+          loadError={projectsError}
+          activeId={activeId}
+          onOpen={handleOpenProject}
+          onDelete={handleDeleteProject}
+          onSignOut={handleSignOut}
+          onSave={handleSave}
+          saving={saving}
+          canSave={draft !== null && !saving}
+          saveLabel={activeId ? "Save changes" : "Save this manuscript"}
+          saveError={saveError}
+          saveNotice={saveNotice}
+        />
+      </div>
 
       <div className="space-y-5">
         <Step

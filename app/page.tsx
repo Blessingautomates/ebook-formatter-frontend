@@ -5,12 +5,13 @@ import { GENRE_OPTIONS, TRIM_OPTIONS } from "@/lib/genres";
 
 /**
  * The editorial landing page. A server component with no hooks and no data
- * fetching, so it prerenders to static HTML — the CTA is the only thing on it
- * that does anything, and it goes to /dashboard.
+ * fetching, so it prerenders to static HTML — the CTAs are the only things on
+ * it that do anything.
  *
- * Both CTAs point at /dashboard. There is no auth in this app (the analysis and
- * export endpoints are open), so a "Sign Up" that collected credentials would be
- * a form that goes nowhere.
+ * The formatter needs an account: `/dashboard` is gated by middleware.ts, so a
+ * signed-out visitor who follows a "Get Started" is sent to /signup and ends up
+ * back where they were headed. The links below go straight to the auth pages so
+ * that happens in one hop rather than two.
  */
 
 const FEATURES = [
@@ -48,9 +49,14 @@ export default function LandingPage() {
           <span className="font-serif text-lg font-semibold tracking-tight">
             Ebook Formatter
           </span>
-          <Link href="/dashboard" className="btn btn-sm">
-            Open the formatter
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/login" className="btn btn-sm">
+              Log in
+            </Link>
+            <Link href="/signup" className="btn btn-sm">
+              Open the formatter
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -78,18 +84,19 @@ export default function LandingPage() {
 
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
               <Link
-                href="/dashboard"
+                href="/signup"
                 className="btn btn-primary px-6 py-3 text-base"
               >
                 Get Started
               </Link>
-              <Link href="/dashboard" className="btn px-6 py-3 text-base">
-                Sign Up
+              <Link href="/login" className="btn px-6 py-3 text-base">
+                Log in
               </Link>
             </div>
 
             <p className="mt-5 text-xs text-faint">
-              Accepts {ACCEPTED_EXTENSIONS.join(", ")} · no account needed
+              Accepts {ACCEPTED_EXTENSIONS.join(", ")} · an account saves your
+              projects
             </p>
           </div>
         </section>
@@ -225,13 +232,13 @@ export default function LandingPage() {
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link
-                href="/dashboard"
+                href="/signup"
                 className="btn btn-primary px-6 py-3 text-base"
               >
-                Get Started
+                Create your account
               </Link>
-              <Link href="/dashboard" className="btn px-6 py-3 text-base">
-                Sign Up
+              <Link href="/login" className="btn px-6 py-3 text-base">
+                Log in
               </Link>
             </div>
           </div>

@@ -37,9 +37,24 @@ export interface TypoLocation {
   likely_proper_noun: boolean;
 }
 
+export interface ChapterSummary {
+  /** The heading, without its Markdown marker. */
+  title: string;
+  /** The line the heading is on, 1-based. */
+  line_number: number;
+  /** Words in the chapter, its heading included. */
+  word_count: number;
+}
+
 export interface BookAnalysis {
   word_count: number;
   chapter_count: number;
+  /**
+   * Per-chapter breakdown, in document order. A "Front Matter" entry appears
+   * when the manuscript has text before its first heading, so this can be one
+   * longer than chapter_count.
+   */
+  chapters: ChapterSummary[];
   detected_language: string;
   language_name: string;
   text_direction: TextDirection;
