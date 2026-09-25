@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
+
+/** The GA4 measurement ID for format.toolstackai.xyz. */
+const GA_MEASUREMENT_ID = "G-D3PFL239DZ";
 
 /**
  * The canonical origin, spelled out once. metadataBase resolves the relative
@@ -62,7 +66,27 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        {/*
+         * afterInteractive, not beforeInteractive: analytics is not on the
+         * critical path, and starting the loader sooner would compete with the
+         * first paint for bandwidth. Both tags sit at the end of <body> so the
+         * inline config runs after the external script is in place.
+         */}
+        <Script
+          src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', '${GA_MEASUREMENT_ID}');
+          `}
+        </Script>
+      </body>
     </html>
   );
 }
