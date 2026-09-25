@@ -4,12 +4,19 @@ import type { ChapterSummary, Genre, TrimSize } from "./types";
 /**
  * Data access for saved manuscript projects.
  *
- * A project row is the *settings and measurements* of a manuscript, not the
- * manuscript itself. The text is deliberately not stored: it is the author's
- * work, it is by far the biggest thing here, and nothing on the projects list
- * needs it. The consequence is visible in the UI — reopening a project restores
- * its genre, title and typography, but the file has to be uploaded again before
- * it can be exported.
+ * A project row holds the manuscript's settings and measurements, plus
+ * `content` — the edited text, as Markdown, once the author has saved it from
+ * the editor.
+ *
+ * Storing the text is a deliberate reversal of this table's original design,
+ * which held settings only. The editor is what changed the trade: an editing
+ * surface whose work is lost on reload is not an editing surface, and the
+ * Markdown form is the same text the export already receives, so it is one
+ * representation rather than two.
+ *
+ * `content` stays null for a project saved from the upload flow without the
+ * editor ever being opened, which is why the UI still says a manuscript has to
+ * be uploaded again in that case.
  */
 export interface ManuscriptRecord {
   id: string;
@@ -22,6 +29,8 @@ export interface ManuscriptRecord {
   font_family: string | null;
   font_size: number | null;
   trim_size: TrimSize;
+  /** The edited manuscript as Markdown, or null if it was never edited here. */
+  content: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +53,7 @@ const COLUMNS = [
   "font_family",
   "font_size",
   "trim_size",
+  "content",
   "created_at",
   "updated_at",
 ].join(",");

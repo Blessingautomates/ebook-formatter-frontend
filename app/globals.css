@@ -245,4 +245,131 @@ body {
     padding: 0 0.15rem;
     font-weight: 600;
   }
+
+  /*
+   * ---- the editor canvas ----
+   *
+   * Tiptap renders its own DOM (EditorContent's div, then the ProseMirror
+   * element), so these rules reach markup no component writes. They are in
+   * @layer components rather than left to Tailwind utilities for that reason:
+   * there is no element to put a className on.
+   *
+   * The family and size come down as custom properties set on .editor-surface
+   * by TiptapEditor, so changing the preview font restyles the canvas without
+   * re-rendering the document.
+   */
+  .editor-surface {
+    display: flex;
+    flex-direction: column;
+    min-height: 28rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: 0.875rem;
+    overflow: hidden;
+  }
+
+  .editor-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.5rem 0.6rem;
+    background: var(--color-surface-2);
+    border-bottom: 1px solid var(--color-line);
+  }
+
+  .editor-toolbar-divider {
+    width: 1px;
+    align-self: stretch;
+    margin: 0.2rem 0.35rem;
+    background: var(--color-line);
+  }
+
+  /* .btn already carries the border and states; this only squares it up for a
+     toolbar, where the buttons sit flush against each other. */
+  .editor-tool {
+    min-width: 2.15rem;
+    padding: 0.3rem 0.45rem;
+  }
+
+  .editor-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+  }
+
+  .editor-prose {
+    flex: 1;
+    padding: 1.25rem 1.4rem 2.5rem;
+    font-family: var(--editor-font, Georgia, serif);
+    font-size: var(--editor-size, 11pt);
+    line-height: 1.7;
+    color: var(--color-ink);
+    /* The container draws the focus ring, so the inner element must not. */
+    outline: none;
+  }
+
+  .editor-prose > * + * {
+    margin-top: 0.85em;
+  }
+
+  .editor-prose h1,
+  .editor-prose h2,
+  .editor-prose h3 {
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .editor-prose h1 {
+    font-size: 1.6em;
+    margin-top: 1.1em;
+  }
+
+  .editor-prose h2 {
+    font-size: 1.3em;
+    margin-top: 1.1em;
+  }
+
+  .editor-prose h3 {
+    font-size: 1.12em;
+    margin-top: 1.1em;
+  }
+
+  .editor-prose ul {
+    list-style: disc;
+    padding-left: 1.4em;
+  }
+
+  .editor-prose li + li {
+    margin-top: 0.25em;
+  }
+
+  .editor-prose blockquote {
+    border-left: 3px solid var(--color-accent);
+    padding-left: 0.9em;
+    color: var(--color-muted);
+    font-style: italic;
+  }
+
+  /* A scene break, which the exporter writes as * * * and reads back. */
+  .editor-prose hr {
+    width: 40%;
+    margin: 1.8em auto;
+    border: 0;
+    border-top: 1px solid var(--color-line-strong);
+  }
+
+  /* Tiptap's Placeholder extension marks the empty first node with this class
+     and puts the text in data-placeholder. */
+  .editor-prose p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+    color: var(--color-faint);
+  }
 }

@@ -38,9 +38,29 @@ create table if not exists public.manuscripts (
   font_size numeric,
   trim_size text not null default '6x9',
 
+  -- The edited manuscript, as Markdown, written from the dashboard editor.
+  --
+  -- This column is a deliberate reversal of the table's original design, which
+  -- held settings and measurements only. The editor changed the trade: work
+  -- typed into it has to survive a reload, and the Markdown form is the same
+  -- text /api/export-book already receives, so it is not a second
+  -- representation of the book.
+  --
+  -- Null for a project saved through the upload flow without the editor being
+  -- opened. Nothing on the projects list reads it, so the list query could
+  -- omit it, but `select`ing it costs one column and keeps the row shape
+  -- honest.
+  content text,
+
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Existing installs predate the editor, so the column is added separately.
+-- `create table if not exists` above is a no-op on a database that already has
+-- the table, and this file is meant to be re-runnable.
+alter table public.manuscripts
+  add column if not exists content text;
 
 -- The projects list is always "mine, newest first".
 create index if not exists manuscripts_user_recent_idx

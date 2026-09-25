@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { ACCEPTED_EXTENSIONS } from "@/lib/api";
@@ -6,13 +7,24 @@ import { GENRE_OPTIONS, TRIM_OPTIONS } from "@/lib/genres";
 /**
  * The editorial landing page. A server component with no hooks and no data
  * fetching, so it prerenders to static HTML — the CTAs are the only things on
- * it that do anything.
+ * it that do anything. All document work lives in /dashboard; nothing here
+ * mounts an editor.
  *
- * The formatter needs an account: `/dashboard` is gated by middleware.ts, so a
- * signed-out visitor who follows a "Get Started" is sent to /signup and ends up
- * back where they were headed. The links below go straight to the auth pages so
- * that happens in one hop rather than two.
+ * The formatter needs an account and `/dashboard` is gated by middleware.ts.
+ * "Get Started" and "Create your account" go straight to /signup, so a new
+ * visitor is spared a hop. "Open the formatter" goes to /dashboard instead: a
+ * signed-out visitor is bounced to /login?next=/dashboard and returns there
+ * afterwards, which is the right trade for someone who already has an account.
  */
+
+/*
+ * The root is this page's canonical URL. Declared here rather than in the root
+ * layout on purpose: a canonical set in layout.tsx is inherited by every route,
+ * which would mark /login, /signup and /dashboard as duplicates of "/".
+ */
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 const FEATURES = [
   {
@@ -53,7 +65,7 @@ export default function LandingPage() {
             <Link href="/login" className="btn btn-sm">
               Log in
             </Link>
-            <Link href="/signup" className="btn btn-sm">
+            <Link href="/dashboard" className="btn btn-sm">
               Open the formatter
             </Link>
           </div>
@@ -88,6 +100,9 @@ export default function LandingPage() {
                 className="btn btn-primary px-6 py-3 text-base"
               >
                 Get Started
+              </Link>
+              <Link href="/dashboard" className="btn px-6 py-3 text-base">
+                Open the formatter
               </Link>
               <Link href="/login" className="btn px-6 py-3 text-base">
                 Log in
@@ -236,6 +251,9 @@ export default function LandingPage() {
                 className="btn btn-primary px-6 py-3 text-base"
               >
                 Create your account
+              </Link>
+              <Link href="/dashboard" className="btn px-6 py-3 text-base">
+                Open the formatter
               </Link>
               <Link href="/login" className="btn px-6 py-3 text-base">
                 Log in

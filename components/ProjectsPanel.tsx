@@ -167,13 +167,15 @@ export function ProjectsPanel({
           </div>
 
           {/*
-            Said plainly because it is the one thing about a saved project that
-            is not obvious: the row holds settings and measurements, not the
-            manuscript, so an export needs the file again.
+            The one thing about a saved project that is not obvious. Which of the
+            two paragraphs applies depends on whether the manuscript was ever
+            saved from the editor: a project saved through the upload flow alone
+            holds settings and measurements, and its row's `content` is null.
           */}
           <p className="mt-4 text-xs leading-relaxed text-muted">
-            These settings are loaded into the form. The manuscript itself is not
-            stored, so upload the file again before exporting.
+            {active.content
+              ? "These settings and the manuscript text are loaded back into the editor. Exporting still needs the original file re-uploaded, because that is what tells the renderer the language and script — your edits are kept when you do."
+              : "These settings are loaded into the form. The manuscript itself was never saved from the editor, so upload the file again before exporting."}
           </p>
         </div>
       ) : null}

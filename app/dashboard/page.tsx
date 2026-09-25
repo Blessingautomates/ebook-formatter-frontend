@@ -11,8 +11,18 @@ import { ExportHub } from "@/components/ExportHub";
 import { GenreSelector } from "@/components/GenreSelector";
 import { ProjectsPanel } from "@/components/ProjectsPanel";
 import { TypoDrawer } from "@/components/TypoDrawer";
+import {
+  ManuscriptWorkspace,
+  type EditorState,
+} from "@/components/editor/ManuscriptWorkspace";
 import { Notice, Step } from "@/components/primitives";
 import { analyzeBook, exportBook } from "@/lib/api";
+import {
+  chaptersFromMarkdown,
+  countChapters,
+  countWords,
+  joinChapters,
+} from "@/lib/editorContent";
 import {
   RECENT_PROJECT_LIMIT,
   deleteManuscript,
@@ -26,6 +36,15 @@ import { applyFixes, buildRows, type Decision, type Decisions } from "@/lib/typo
 import type { BookAnalysis, ExportFormat, ExportSettings } from "@/lib/types";
 
 type Status = "idle" | "analyzing" | "ready";
+
+/**
+ * A draft before the editor has had its say.
+ *
+ * `content` is deliberately absent: it is the whole manuscript as one string,
+ * and putting it in the memo below would rebuild that string on every keystroke.
+ * It is joined at the moment of saving instead.
+ */
+type DraftBase = Omit<ManuscriptDraft, "content">;
 
 const INITIAL_SETTINGS: ExportSettings = {
   title: "",
@@ -59,6 +78,14 @@ export default function DashboardPage() {
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [lastExport, setLastExport] = useState<string | null>(null);
+
+  /**
+   * What the editor currently holds, or null when it is not mounted.
+   *
+   * The chapters live here rather than inside the workspace so export and save
+   * can read them, but nothing here joins them into a string — see `DraftBase`.
+   */
+  const [editorState, setEditorState] = useState<EditorState | null>(null);
 
   // ---- saved projects ----
   const router = useRouter();
@@ -132,6 +159,9 @@ export default function DashboardPage() {
     setExporting(null);
     setExportError(null);
     setLastExport(null);
+    // The editor belongs to the manuscript being discarded; leaving its
+    // chapters in place would let a stray save write them to the next project.
+    setEditorState(null);
     // Starting over means starting a *new* manuscript, so the next save must
     // insert rather than overwrite the project that was open.
     setActiveId(null);
@@ -143,6 +173,9 @@ export default function DashboardPage() {
     setFile(next);
     setAnalysis(null);
     setDecisions({});
+    // A new upload replaces the whole manuscript, so the editor must re-seed
+    // from the analysis rather than keep the previous book's chapters.
+    setEditorState(null);
     setExportError(null);
     setLastExport(null);
     setError(null);
@@ -191,7 +224,10 @@ export default function DashboardPage() {
     setLastExport(null);
     try {
       const filename = await exportBook({
-        text: corrected.text,
+        // The editor's edits, when there are any; the corrected analyzer text
+        // otherwise. `file` stays as the fallback for a manuscript the server
+        // returned no text for, which `exportBook` handles.
+        text: manuscriptText(),
         file,
         analysis,
         settings,
@@ -211,6 +247,89 @@ export default function DashboardPage() {
     projects.find((project) => project.id === activeId) ?? null;
 
   /**
+   * What the editor should be showing, or null when there is nothing to edit.
+   *
+   * A reopened project with stored text wins even once a fresh analysis has
+   * arrived, and the two are not interchangeable. The analyzer supplies the
+   * language, script and text direction the export needs — none of which are
+   * stored with a project — so reopening one means uploading the original file
+   * again. Re-seeding the editor from that upload would discard the very edits
+   * the project was reopened for, so the stored text stays and the analysis is
+   * used only for what it alone knows. Its key is the project id, which is why
+   * the analysis landing does not remount the editor.
+   *
+   * `key` exists because the workspace seeds its state once and ignores later
+   * prop changes. It identifies the manuscript, not its contents — keying on
+   * the text would remount the editor on every accepted spelling correction and
+   * throw away whatever had been typed.
+   */
+  const workspaceSource = useMemo(() => {
+    if (openProject?.content) {
+      return {
+        key: `project:${openProject.id}`,
+        text: openProject.content,
+        chapters: openProject.chapters,
+      };
+    }
+
+    // Checked rather than merely non-null: with no extracted text there is
+    // nothing to edit, and the step should say so rather than open an editor on
+    // a book of empty chapters.
+    if (analysis?.manuscript_text) {
+      return {
+        key: `analysis:${file?.name ?? ""}:${file?.lastModified ?? 0}`,
+        text: corrected.text ?? analysis.manuscript_text,
+        chapters: analysis.chapters,
+      };
+    }
+
+    return null;
+  }, [analysis, file, corrected.text, openProject]);
+
+  /**
+   * The manuscript as it should be exported or saved.
+   *
+   * The editor wins once it has been typed into. Until then the seeded text is
+   * preferred over any other copy of it, because it is the one the chapter line
+   * numbers describe and it has not been through a Markdown → HTML → Markdown
+   * round trip, which comes back with normalised blank lines.
+   */
+  function manuscriptText(): string | null {
+    if (editorState?.edited) return joinChapters(editorState.chapters);
+    return workspaceSource?.text ?? corrected.text ?? null;
+  }
+
+  /**
+   * The draft plus the manuscript text.
+   *
+   * An untouched manuscript keeps its stored breakdown as well as its text. The
+   * analyzer can see structure the editor cannot — it reads a bare "Chapter One"
+   * line as a chapter heading, where the editor sees a paragraph and can only
+   * round-trip `#`-style headings — so recomputing the breakdown for a book
+   * nobody has edited would silently lose chapters.
+   *
+   * Once the text has really changed, though, those line numbers describe a
+   * document that no longer exists and only a recomputation slices the stored
+   * text correctly. The counts are restated for the same reason: they are
+   * measurements *of* the manuscript, and the manuscript has changed.
+   */
+  function withContent(base: DraftBase): ManuscriptDraft {
+    if (!editorState?.edited) {
+      return { ...base, content: manuscriptText() };
+    }
+
+    const content = joinChapters(editorState.chapters);
+    const chapters = chaptersFromMarkdown(content);
+    return {
+      ...base,
+      content,
+      chapters,
+      chapter_count: countChapters(chapters),
+      word_count: countWords(content),
+    };
+  }
+
+  /**
    * The row to write, or null when there is nothing to write yet.
    *
    * Measurements come from the live analysis when there is one. Falling back to
@@ -218,7 +337,7 @@ export default function DashboardPage() {
    * manuscript, change only its genre, and save that — the file they would
    * otherwise have to re-upload to produce measurements is not here.
    */
-  const draft: ManuscriptDraft | null = useMemo(() => {
+  const draft: DraftBase | null = useMemo(() => {
     const shared = {
       title: settings.title.trim() || "Untitled",
       author: settings.author.trim() || null,
@@ -256,7 +375,7 @@ export default function DashboardPage() {
     setSaveError(null);
     setSaveNotice(null);
     try {
-      const saved = await saveManuscript(draft, activeId);
+      const saved = await saveManuscript(withContent(draft), activeId);
       setActiveId(saved.id);
       setProjects((current) =>
         [saved, ...current.filter((project) => project.id !== saved.id)].slice(
@@ -293,6 +412,7 @@ export default function DashboardPage() {
     setFile(null);
     setAnalysis(null);
     setDecisions({});
+    setEditorState(null);
     setTyposOpen(false);
     setStatus("idle");
     setError(null);
@@ -300,8 +420,16 @@ export default function DashboardPage() {
     setExportError(null);
     setLastExport(null);
     setSaveError(null);
+    /*
+     * Whether the manuscript itself came back depends on whether it was ever
+     * saved from the editor. A project saved from the upload flow alone stores
+     * settings and measurements only, so it still needs its file re-uploaded to
+     * be exported.
+     */
     setSaveNotice(
-      `Opened “${record.title}”. Upload the manuscript again to export it.`,
+      record.content
+        ? `Opened “${record.title}”. Upload the original file again to export it — your edits are kept.`
+        : `Opened “${record.title}”. Upload the manuscript again to export it.`,
     );
   }
 
@@ -338,7 +466,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
+    <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
       <header className="mb-8">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <h1 className="font-serif text-3xl font-semibold tracking-tight">
@@ -435,6 +563,30 @@ export default function DashboardPage() {
 
         <Step
           n={3}
+          title="Edit"
+          hint="Chapter by chapter, set in the type it will be printed in."
+          active={workspaceSource !== null}
+        >
+          {workspaceSource ? (
+            <ManuscriptWorkspace
+              // Identifies the manuscript, not its contents — see
+              // `workspaceSource`. A different key is what makes the workspace
+              // re-seed; the same key leaves whatever has been typed alone.
+              key={workspaceSource.key}
+              text={workspaceSource.text}
+              chapters={workspaceSource.chapters}
+              onChange={setEditorState}
+            />
+          ) : (
+            <Notice>
+              Analyze a manuscript — or open a saved project that has one stored
+              — to edit it here. Edits become the text the export renders.
+            </Notice>
+          )}
+        </Step>
+
+        <Step
+          n={4}
           title="Genre and layout"
           hint="Sets the typography and page furniture of the export."
           active={ready}
@@ -452,10 +604,10 @@ export default function DashboardPage() {
         </Step>
 
         <Step
-          n={4}
+          n={5}
           title="Export"
           hint="Each format downloads as soon as it finishes rendering."
-          active={ready}
+          active={ready || workspaceSource !== null}
         >
           {ready ? (
             <ExportHub
@@ -465,6 +617,19 @@ export default function DashboardPage() {
               lastExport={lastExport}
               onExport={handleExport}
             />
+          ) : workspaceSource !== null ? (
+            /*
+             * A reopened project. Exporting needs the language, script and text
+             * direction the analyzer detects, and a project row does not store
+             * them — so this is a real limitation, not a missing upload. The
+             * edits are not at risk: re-uploading keeps them (see
+             * `workspaceSource`).
+             */
+            <Notice>
+              Upload the original file again to enable export. It is what tells
+              the renderer the language, script and text direction — none of
+              which a saved project stores. Your edits are kept.
+            </Notice>
           ) : (
             <Notice>Analyze a manuscript to enable export.</Notice>
           )}
