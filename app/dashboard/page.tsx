@@ -1,8 +1,9 @@
 "use client";
 
+import { CheckoutEventNames } from "@paddle/paddle-js";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AdvancedSettings } from "@/components/AdvancedSettings";
 import { AnalysisDashboard } from "@/components/AnalysisDashboard";
@@ -15,6 +16,8 @@ import {
   ManuscriptWorkspace,
   type EditorState,
 } from "@/components/editor/ManuscriptWorkspace";
+import { usePaddle } from "@/components/paddle-provider";
+import { PricingModal } from "@/components/pricing-modal";
 import { Notice, Step } from "@/components/primitives";
 import { analyzeBook, exportBook } from "@/lib/api";
 import {
@@ -32,6 +35,7 @@ import {
   type ManuscriptRecord,
 } from "@/lib/manuscripts";
 import { createClient } from "@/lib/supabase/client";
+import { getMySubscription, type Plan } from "@/lib/subscriptions";
 import { applyFixes, buildRows, type Decision, type Decisions } from "@/lib/typos";
 import type { BookAnalysis, ExportFormat, ExportSettings } from "@/lib/types";
 
@@ -90,6 +94,12 @@ export default function DashboardPage() {
   // ---- saved projects ----
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
+  /**
+   * The account id, kept for one purpose: it is what the checkout sends Paddle
+   * as custom data, and therefore the only thing that tells the webhook which
+   * row the payment belongs to.
+   */
+  const [userId, setUserId] = useState<string | null>(null);
   const [projects, setProjects] = useState<ManuscriptRecord[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState<string | null>(null);
@@ -98,6 +108,11 @@ export default function DashboardPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
+
+  // ---- plan ----
+  /** Null until the subscriptions row has been read. */
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [pricingOpen, setPricingOpen] = useState(false);
 
   /**
    * The lists are read in the browser rather than on the server so this stays a
@@ -115,6 +130,7 @@ export default function DashboardPage() {
         } = await createClient().auth.getUser();
         if (cancelled) return;
         setEmail(user?.email ?? null);
+        setUserId(user?.id ?? null);
 
         const rows = await listManuscripts();
         if (!cancelled) setProjects(rows);
@@ -134,6 +150,44 @@ export default function DashboardPage() {
       cancelled = true;
     };
   }, []);
+
+  /**
+   * Read the account's plan.
+   *
+   * A failed read leaves `plan` as it was rather than falling back to "free".
+   * The row is only consulted to decide whether to offer an upgrade, and
+   * telling someone who has paid that they are on the free plan — because a
+   * query timed out — is worse than leaving the label alone.
+   */
+  const loadPlan = useCallback(async (): Promise<void> => {
+    try {
+      const record = await getMySubscription();
+      setPlan(record?.plan ?? "free");
+    } catch {
+      // Left unknown.
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPlan();
+  }, [loadPlan]);
+
+  const { lastEvent } = usePaddle();
+
+  /*
+   * The plan is written by the webhook, and that is a separate delivery from
+   * the event the browser sees from the overlay — the row can land a second or
+   * two after the checkout reports success. Reading again when the overlay
+   * closes is what usually catches it. The provider has already narrowed
+   * `lastEvent` to the three events worth reacting to; an error is the one of
+   * those that changes nothing here.
+   */
+  useEffect(() => {
+    if (!lastEvent || lastEvent.name === CheckoutEventNames.CHECKOUT_ERROR) {
+      return;
+    }
+    void loadPlan();
+  }, [lastEvent, loadPlan]);
 
   const rows = useMemo(() => buildRows(analysis?.typos ?? []), [analysis]);
 
@@ -475,6 +529,17 @@ export default function DashboardPage() {
             </Link>
           </h1>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => setPricingOpen(true)}
+            >
+              {plan === "pro"
+                ? "Pro plan"
+                : plan === "free"
+                  ? "Upgrade to Pro"
+                  : "Plan"}
+            </button>
             <Link
               href="/"
               className="text-xs font-medium text-muted transition-colors hover:text-accent"
@@ -492,6 +557,14 @@ export default function DashboardPage() {
           TXT.
         </p>
       </header>
+
+      <PricingModal
+        open={pricingOpen}
+        onClose={() => setPricingOpen(false)}
+        plan={plan ?? "free"}
+        email={email}
+        userId={userId}
+      />
 
       <div className="mb-5">
         <ProjectsPanel

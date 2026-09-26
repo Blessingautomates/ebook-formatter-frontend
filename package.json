@@ -7,10 +7,11 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/test-editor-content.mjs",
+    "test": "node scripts/test-editor-content.mjs && node scripts/test-paddle-webhook.mjs",
     "postinstall": "sh scripts/fix-native-addons.sh"
   },
   "dependencies": {
+    "@paddle/paddle-js": "^1.6.5",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.2",
     "@tiptap/extension-heading": "^3.31.3",

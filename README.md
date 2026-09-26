@@ -23,14 +23,16 @@ uvicorn main:app --reload --port 8000
 
 ```bash
 npm run typecheck              # tsc --noEmit
-npm test                       # lib/editorContent.ts
+npm test                       # lib/editorContent.ts, lib/paddle/webhook.ts
 ```
 
 `npm test` needs no runner and no new dependency: Node strips the TypeScript
-itself from v22.6 on, so `scripts/test-editor-content.mjs` imports the real
-module. It covers the Markdown ⇄ HTML bridge except `htmlToMarkdown`, which
-needs a DOM that neither Node nor this repo supplies — that one is on the manual
-pass. The backend's own harness is `verify.py` in the other repo.
+itself from v22.6 on, so the scripts import the real modules. It covers the
+Markdown ⇄ HTML bridge in `lib/editorContent.ts` — except `htmlToMarkdown`,
+which needs a DOM that neither Node nor this repo supplies, so that one is on
+the manual pass — and the Paddle webhook's signature check and event mapping in
+`lib/paddle/webhook.ts`. The backend's own harness is `verify.py` in the other
+repo.
 
 ### Native addons on Termux/Android
 
@@ -71,7 +73,40 @@ page says which variables are missing rather than failing silently.
 
 Both variables are `NEXT_PUBLIC_`, so they ship to the browser. That is
 intended: the anon key only identifies the project, and RLS is what protects the
-data. The service-role key must never appear in this app.
+data.
+
+The service-role key does appear in this app, in exactly one place:
+`SUPABASE_SERVICE_ROLE_KEY`, read only by `lib/supabase/admin.ts` and used only
+by the Paddle webhook. It is not `NEXT_PUBLIC_`, so it is never inlined into the
+client bundle, and nothing under `components/` may import that module — a
+service-role client in the browser would hand every row of every table to
+whoever asked. Everything a signed-in user does goes through the anon key and
+RLS.
+
+### Paddle
+
+The Pro plan is sold through Paddle, which handles the checkout, the tax and the
+card. Four variables in `.env.local`:
+
+1. `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN` and `NEXT_PUBLIC_PADDLE_ENVIRONMENT` come
+   from **Developer Tools → Authentication**. Use the `test_` token with
+   `sandbox` while working; `production` refuses to be reached by accident,
+   since anything that is not exactly that string is treated as sandbox.
+2. `NEXT_PUBLIC_PADDLE_PRO_PRICE_ID` is the `pri_…` under the Pro plan in
+   **Catalog → Products**. The checkout is built from a price id, so the amount,
+   the currency and the billing interval all come from Paddle — the `$12` in the
+   modal is display copy and has to be kept in step by hand.
+3. `PADDLE_WEBHOOK_SECRET` is the signing secret for the notification endpoint.
+   Add `https://<your-origin>/api/webhooks/paddle` under **Developer Tools →
+   Notifications**, subscribe it to at least `transaction.completed` and the
+   three `subscription.*` events the handler reads, and copy the `pdl_ntfset_…`
+   secret across. Without it the endpoint answers every delivery with a 500
+   rather than trusting an unsigned request — so a plan can be paid for and never
+   provisioned, which is the failure to watch for.
+
+Paddle has to reach the endpoint over the public internet. `ngrok http 3000`
+(or Paddle's own sandbox forwarding) is the usual way to test it locally; the
+secret differs per endpoint, sandbox and live.
 
 ## How it talks to the API
 
@@ -227,3 +262,19 @@ somebody does.
 - **Missing Supabase config fails closed.** `/dashboard` redirects to `/login`
   and the sign-in page prints the setup steps. Assuming "signed in" when the
   project is unconfigured would hand the formatter to anyone who asked.
+- **The plan is recorded, not enforced.** Upgrading writes a `subscriptions`
+  row and the dashboard reads it back, but no feature checks it — every account
+  can export everything today. The Pro feature list in `lib/paddle/env.ts` is
+  display copy describing what the formatter already does, so treat it as a
+  promise to keep rather than one the code is keeping.
+- **Only a notification grants Pro.** The checkout completing in the browser
+  proves nothing, and nothing client-side writes the row: `subscriptions` has a
+  `select` policy and no write policies at all. A plan that never appears after
+  a successful payment means the webhook did not verify or could not be
+  attributed, and the server log says which.
+- **The webhook reads the body as text.** The Paddle signature covers the exact
+  bytes sent, so the handler verifies before parsing and never re-serialises.
+  A body read as JSON first would reorder keys and fail every delivery.
+- **Resending a notification is safe.** Each delivery states the row fields it
+  knows in full and writes only those, so a retry lands where the first attempt
+  did and an out-of-order pair cannot blank a column the other one filled.

@@ -109,3 +109,74 @@ drop trigger if exists manuscripts_touch_updated_at on public.manuscripts;
 create trigger manuscripts_touch_updated_at
   before update on public.manuscripts
   for each row execute function public.touch_updated_at();
+
+-- Subscriptions: the plan an account is on, one row per account.
+--
+-- Written only by the Paddle webhook (app/api/webhooks/paddle/route.ts), which
+-- runs with the service-role key because a notification arrives with no session
+-- and therefore no `auth.uid()` for a policy to match. That key bypasses the
+-- policies below entirely, which is the point: the account must not be able to
+-- write its own plan, or there would be nothing to pay for.
+--
+-- `user_id` is the primary key rather than a surrogate id, because an account
+-- has at most one plan and every read is "mine". A second row for the same
+-- account would be a bug with no meaning, and the key makes it impossible.
+create table if not exists public.subscriptions (
+  user_id uuid primary key
+    references auth.users (id) on delete cascade,
+
+  -- 'free' is the absence of a subscription, not a row that has to exist: an
+  -- account with no row here is on the free plan, and this default only covers
+  -- a row that was inserted before its plan was known.
+  plan text not null default 'free' check (plan in ('free', 'pro')),
+
+  -- Paddle's own status verbatim — active, trialing, past_due, paused,
+  -- canceled. Which of those count as Pro is decided in lib/paddle/webhook.ts,
+  -- not here, so the policy can change without a migration. 'inactive' is not
+  -- a Paddle status; it is the placeholder for a row inserted without one.
+  status text not null default 'inactive',
+
+  -- Paddle's identifiers. Both are how a notification that arrived without our
+  -- custom data is matched back to an account, so they are worth storing even
+  -- though nothing displays them.
+  --
+  -- Unique, because two accounts sharing a subscription id would mean the
+  -- lookup below could resolve to either. Nullable unique is safe in Postgres:
+  -- it permits many rows with no subscription id, which is what a row written
+  -- from a bare transaction looks like.
+  paddle_subscription_id text unique,
+  paddle_customer_id text,
+
+  -- The price that was bought. Not read by anything yet — it is what makes
+  -- "which plan is this?" answerable from the row once there is more than one.
+  price_id text,
+
+  -- End of the paid period, and when a cancellation was requested. Set by the
+  -- subscription events; a transaction on its own does not carry them.
+  current_period_end timestamptz,
+  canceled_at timestamptz,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- The webhook's fallback lookup for a notification that named no account.
+create index if not exists subscriptions_paddle_customer_idx
+  on public.subscriptions (paddle_customer_id);
+
+-- Read own, and nothing else. There is deliberately no insert, update or delete
+-- policy: with RLS on and no policy permitting them, those statements match no
+-- rows and the client cannot write a plan even though it holds a valid session.
+-- Only the service-role key, which is not in the browser, gets past this.
+alter table public.subscriptions enable row level security;
+
+drop policy if exists "read own subscription" on public.subscriptions;
+create policy "read own subscription" on public.subscriptions
+  for select using ((select auth.uid()) = user_id);
+
+-- Reuses the function defined for manuscripts above, which is why this block
+-- sits at the end of the file rather than beside the table.
+drop trigger if exists subscriptions_touch_updated_at on public.subscriptions;
+create trigger subscriptions_touch_updated_at
+  before update on public.subscriptions
+  for each row execute function public.touch_updated_at();

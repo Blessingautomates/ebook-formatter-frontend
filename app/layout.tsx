@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+
+import { PaddleProvider } from "@/components/paddle-provider";
+
 import "./globals.css";
 
 /** The GA4 measurement ID for format.toolstackai.xyz. */
@@ -67,7 +70,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        {children}
+        {/*
+         * The Paddle checkout is opened from the dashboard, but the provider
+         * sits here because it has to be above whatever renders the upgrade
+         * button. It is a client component wrapping server-rendered children,
+         * so the pages below keep rendering on the server.
+         */}
+        <PaddleProvider>{children}</PaddleProvider>
         {/*
          * afterInteractive, not beforeInteractive: analytics is not on the
          * critical path, and starting the loader sooner would compete with the
