@@ -15,19 +15,20 @@ const GA_MEASUREMENT_ID = "G-D3PFL239DZ";
  * on this site.
  */
 const SITE_URL = "https://format.toolstackai.xyz";
-const SITE_NAME = "Ebook Formatter";
+const SITE_NAME = "ToolStackAI Book Studio";
 
 const DESCRIPTION =
   "Upload a manuscript to measure it, review the spelling findings, pick a genre, and export a print-ready PDF, EPUB, DOCX, RTF or TXT.";
 
-const TITLE = "Ebook Formatter — Format Print-Ready eBooks in Minutes";
+const TITLE = "ToolStackAI Book Studio — Format Print-Ready eBooks in Minutes";
 
 /*
  * `title` is a plain string, not `{ default, template }`. Next's types make
  * `template` required whenever the object form is used, and a template here
  * would render /login and /signup — which already end their titles in
- * "— Ebook Formatter" — as "Sign in — Ebook Formatter · Ebook Formatter". A
- * bare string sets the default and leaves child titles alone.
+ * "— ToolStackAI Book Studio" — as "Sign in — ToolStackAI Book Studio ·
+ * ToolStackAI Book Studio". A bare string sets the default and leaves child
+ * titles alone.
  *
  * No `alternates.canonical` either — see app/page.tsx. A canonical declared in
  * the root layout is inherited by every route, which would tell Google that

@@ -53,6 +53,7 @@ export function Step({
   title,
   hint,
   aside,
+  id,
   active = true,
   children,
 }: {
@@ -60,11 +61,17 @@ export function Step({
   title: string;
   hint?: string;
   aside?: ReactNode;
+  /**
+   * An anchor for this step, so a link from the book grid can land on the step
+   * it names rather than at the top of the page.
+   */
+  id?: string;
   active?: boolean;
   children: ReactNode;
 }) {
   return (
     <section
+      id={id}
       className={`card p-5 sm:p-6 ${
         active ? "" : "card-inactive pointer-events-none"
       }`}

@@ -5,7 +5,7 @@ import { AuthForm } from "@/components/AuthForm";
 import { safeNextPath } from "@/lib/redirects";
 
 export const metadata: Metadata = {
-  title: "Create your account — Ebook Formatter",
+  title: "Create your account — ToolStackAI Book Studio",
   description: "Create an account to save manuscripts and come back to them.",
 };
 
@@ -22,7 +22,7 @@ export default async function SignupPage({
         href="/"
         className="mb-6 self-start font-serif text-lg font-semibold tracking-tight transition-colors hover:text-accent"
       >
-        Ebook Formatter
+        ToolStackAI Book Studio
       </Link>
 
       <AuthForm mode="signup" next={safeNextPath(params.next)} />

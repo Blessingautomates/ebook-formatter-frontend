@@ -1,7 +1,7 @@
-# Ebook Formatter UI
+# ToolStackAI Book Studio
 
-Next.js (App Router) + Tailwind CSS front end for the ebook formatting platform,
-for `format.toolstackai.xyz`. It drives the FastAPI backend in
+Next.js (App Router) + Tailwind CSS front end for ToolStackAI Book Studio,
+hosted at `format.toolstackai.xyz`. It drives the FastAPI backend in
 `/root/ebook-formatter`.
 
 ## Running it

@@ -59,7 +59,7 @@ export default function LandingPage() {
       <header className="border-b border-line">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <span className="font-serif text-lg font-semibold tracking-tight">
-            Ebook Formatter
+            ToolStackAI Book Studio
           </span>
           <div className="flex items-center gap-2">
             <Link href="/login" className="btn btn-sm">
@@ -265,9 +265,9 @@ export default function LandingPage() {
 
       <footer className="border-t border-line">
         <div className="mx-auto max-w-6xl px-4 py-8 text-xs leading-relaxed text-faint sm:px-6">
-          Ebook Formatter · format.toolstackai.xyz — manuscripts are analysed and
-          rendered server-side, and a format reports the missing package when its
-          renderer is not installed.
+          ToolStackAI Book Studio · format.toolstackai.xyz — manuscripts are
+          analysed and rendered server-side, and a format reports the missing
+          package when its renderer is not installed.
         </div>
       </footer>
     </div>

@@ -1,3 +1,5 @@
+import { createClient } from "./supabase/client";
+import { isSupabaseConfigured } from "./supabase/env";
 import type { BookAnalysis, ExportFormat, ExportSettings } from "./types";
 
 /** Extensions the backend's extractors accept. */
@@ -39,6 +41,32 @@ async function readError(response: Response): Promise<string> {
   return `Request failed (${response.status} ${response.statusText || "error"}).`;
 }
 
+/**
+ * The caller's Supabase access token, when there is a session to speak of.
+ *
+ * Sent on the routes the backend meters, so an analysis is charged to the
+ * account that asked for it. The header is omitted entirely rather than sent
+ * empty when there is no session: the backend reads a missing header as
+ * "authentication is switched off" and an empty one as a malformed attempt, and
+ * those deserve opposite answers.
+ */
+async function authHeader(): Promise<Record<string, string>> {
+  if (!isSupabaseConfigured) return {};
+  try {
+    const {
+      data: { session },
+    } = await createClient().auth.getSession();
+    return session?.access_token
+      ? { Authorization: `Bearer ${session.access_token}` }
+      : {};
+  } catch {
+    // An unreadable session is the same as none here. The request still goes —
+    // if the backend is metering it will answer 401, which is the honest
+    // outcome, rather than the browser inventing a failure of its own.
+    return {};
+  }
+}
+
 export async function analyzeBook(file: File): Promise<BookAnalysis> {
   const body = new FormData();
   body.append("file", file);
@@ -46,7 +74,11 @@ export async function analyzeBook(file: File): Promise<BookAnalysis> {
   // to the export endpoint, rather than uploading the manuscript a second time.
   body.append("include_text", "true");
 
-  const response = await fetch("/api/analyze-book", { method: "POST", body });
+  const response = await fetch("/api/analyze-book", {
+    method: "POST",
+    body,
+    headers: await authHeader(),
+  });
   if (!response.ok) throw new Error(await readError(response));
   return (await response.json()) as BookAnalysis;
 }
