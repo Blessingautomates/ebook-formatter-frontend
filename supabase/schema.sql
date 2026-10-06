@@ -1005,3 +1005,68 @@ create policy "delete own covers from storage" on storage.objects
     bucket_id = 'covers'
     and (storage.foldername(name))[1] = (select auth.uid())::text
   );
+
+-- ---------------------------------------------------------------------------
+-- Manuscript health scans ("Book Doctor")
+-- ---------------------------------------------------------------------------
+--
+-- One row per scan. The headline numbers get columns of their own because the
+-- dashboard filters and sorts on them; the report body goes to jsonb for the
+-- reason given for manuscripts.chapters above — it is read and written whole,
+-- never queried into.
+--
+-- Rows are written by the backend with the service role, because a scan runs as
+-- a background task after the request that asked for it has already been
+-- answered and its token discarded. That is why there is a select policy here
+-- and nothing else: an author may read their own scans, and cannot forge,
+-- edit, or delete one. A scan is a record of what the server found.
+create table if not exists public.manuscript_health (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  manuscript_id uuid references public.manuscripts (id) on delete cascade,
+  source_filename text,
+  status text not null default 'queued'
+    check (status in ('queued', 'running', 'succeeded', 'failed', 'stale')),
+  -- Free text rather than an enum: stages are a progress detail and will be
+  -- added to, and a check constraint here would mean a migration per stage.
+  stage text not null default 'queued',
+  progress integer not null default 0 check (progress between 0 and 100),
+  error text,
+  metrics jsonb,
+  categories jsonb,
+  health_score integer check (health_score between 0 and 100),
+  total_findings integer,
+  fixable_findings integer,
+  -- Whether the AI pass ran, and what it cost. Kept apart from the synthetic
+  -- token_cost the analyze endpoint reports: that one is a price estimate, this
+  -- one is money actually spent.
+  ai_available boolean not null default false,
+  ai_note text,
+  ai_model text,
+  ai_calls integer not null default 0,
+  ai_cost_usd numeric(10, 6) not null default 0,
+  ai_credits integer not null default 0,
+  scanned_at timestamptz,
+  started_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists manuscript_health_user_recent_idx
+  on public.manuscript_health (user_id, created_at desc);
+
+-- The dashboard shows a manuscript's most recent scan, so this is the index
+-- that serves it.
+create index if not exists manuscript_health_manuscript_recent_idx
+  on public.manuscript_health (manuscript_id, created_at desc);
+
+alter table public.manuscript_health enable row level security;
+
+drop policy if exists "read own health scans" on public.manuscript_health;
+create policy "read own health scans" on public.manuscript_health
+  for select using ((select auth.uid()) = user_id);
+
+drop trigger if exists manuscript_health_touch_updated_at on public.manuscript_health;
+create trigger manuscript_health_touch_updated_at
+  before update on public.manuscript_health
+  for each row execute function public.touch_updated_at();

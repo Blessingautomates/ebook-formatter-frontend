@@ -1,9 +1,16 @@
 import { createClient } from "./supabase/client";
 import { isSupabaseConfigured } from "./supabase/env";
-import type { BookAnalysis, ExportFormat, ExportSettings } from "./types";
+import type {
+  BookAnalysis,
+  ExportFormat,
+  ExportSettings,
+  Genre,
+  HealthJobAccepted,
+  HealthJobStatus,
+} from "./types";
 
 /** Extensions the backend's extractors accept. */
-export const ACCEPTED_EXTENSIONS = [".docx", ".md", ".txt"] as const;
+export const ACCEPTED_EXTENSIONS = [".docx", ".epub", ".md", ".txt"] as const;
 
 export function hasAcceptedExtension(name: string): boolean {
   const lower = name.toLowerCase();
@@ -81,6 +88,81 @@ export async function analyzeBook(file: File): Promise<BookAnalysis> {
   });
   if (!response.ok) throw new Error(await readError(response));
   return (await response.json()) as BookAnalysis;
+}
+
+export interface HealthAnalysisArgs {
+  /**
+   * Preferred: the text already returned by `analyzeBook`. Pass this rather
+   * than the file so a novel is not uploaded a second time just to have it
+   * scanned.
+   */
+  text?: string | null;
+  /** Used when the text is not to hand. */
+  file?: File | null;
+  title?: string;
+  author?: string;
+  genre?: Genre;
+  manuscriptId?: string;
+  /** Ids of findings the author has already dismissed, so a re-run does not
+   * ask the same question twice. */
+  ignored?: string[];
+}
+
+/**
+ * Start a health scan and return the job to poll.
+ *
+ * The scan is slow — it calls a model once per chunk of the book — and it costs
+ * money, so it does not run inside this request. The backend returns a job id
+ * immediately and the work happens in the background; poll it with `readHealth`
+ * until `status` leaves "queued"/"running".
+ */
+export async function startHealthAnalysis({
+  text,
+  file,
+  title,
+  author,
+  genre,
+  manuscriptId,
+  ignored,
+}: HealthAnalysisArgs): Promise<HealthJobAccepted> {
+  const body = new FormData();
+
+  if (text && text.trim()) {
+    body.append("text", text);
+  } else if (file) {
+    body.append("file", file);
+  } else {
+    throw new Error("There is no manuscript to analyze.");
+  }
+
+  if (title?.trim()) body.append("title", title.trim());
+  if (author?.trim()) body.append("author", author.trim());
+  if (genre) body.append("genre", genre);
+  if (manuscriptId) body.append("manuscript_id", manuscriptId);
+  for (const id of ignored ?? []) body.append("ignored", id);
+
+  const response = await fetch("/api/manuscript/analyze", {
+    method: "POST",
+    body,
+    headers: await authHeader(),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return (await response.json()) as HealthJobAccepted;
+}
+
+/**
+ * Read one health scan. Pair with `startHealthAnalysis`.
+ *
+ * A scan belonging to another account comes back 404, not 403, so this cannot
+ * be used to test whether a job id is real.
+ */
+export async function readHealth(jobId: string): Promise<HealthJobStatus> {
+  const response = await fetch(
+    `/api/manuscript/health/${encodeURIComponent(jobId)}`,
+    { headers: await authHeader() },
+  );
+  if (!response.ok) throw new Error(await readError(response));
+  return (await response.json()) as HealthJobStatus;
 }
 
 function filenameFrom(response: Response, fallback: string): string {
