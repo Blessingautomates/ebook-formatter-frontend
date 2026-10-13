@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { SiteFooter } from "@/components/site-footer";
 import { ACCEPTED_EXTENSIONS } from "@/lib/api";
 import { GENRE_OPTIONS, TRIM_OPTIONS } from "@/lib/genres";
 
@@ -263,13 +264,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="border-t border-line">
-        <div className="mx-auto max-w-6xl px-4 py-8 text-xs leading-relaxed text-faint sm:px-6">
-          ToolStackAI Book Studio · format.toolstackai.xyz — manuscripts are
-          analysed and rendered server-side, and a format reports the missing
-          package when its renderer is not installed.
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

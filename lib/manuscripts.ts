@@ -1,5 +1,11 @@
 import { createClient } from "./supabase/client";
-import type { ChapterSummary, Genre, TrimSize } from "./types";
+import type {
+  ChapterSummary,
+  Genre,
+  StoryBible,
+  TrimSize,
+  VoiceProfile,
+} from "./types";
 
 /**
  * Data access for saved manuscript projects.
@@ -56,14 +62,31 @@ export interface ManuscriptRecord {
    * switcher moved would look deleted.
    */
   workspace_id: string | null;
+  /**
+   * The author's Writing DNA, measured by VoiceGuard.
+   *
+   * Null until a profile has been generated. The workspace card reads it, and
+   * the voice-check route refuses to run without one.
+   */
+  voice_profile: VoiceProfile | null;
+  /** The story bible: the entities in the book and the contradictions in them. */
+  story_bible: StoryBible | null;
   created_at: string;
   updated_at: string;
 }
 
-/** What a save writes. `user_id` is filled in by the column's default. */
+/**
+ * What a save writes. `user_id` is filled in by the column's default.
+ *
+ * The two intelligence artifacts are omitted alongside the generated columns,
+ * and for a different reason: they are written by the worker, not the editor.
+ * Leaving them in the draft would make every save send back whatever it last
+ * read, so a save from a tab that was open while a profile was being generated
+ * would overwrite the fresh profile with the null it had loaded.
+ */
 export type ManuscriptDraft = Omit<
   ManuscriptRecord,
-  "id" | "created_at" | "updated_at"
+  "id" | "created_at" | "updated_at" | "voice_profile" | "story_bible"
 >;
 
 /** Named rather than `select *`, so a column added later cannot leak silently. */
@@ -82,6 +105,8 @@ const COLUMNS = [
   "language",
   "content",
   "workspace_id",
+  "voice_profile",
+  "story_bible",
   "created_at",
   "updated_at",
 ].join(",");

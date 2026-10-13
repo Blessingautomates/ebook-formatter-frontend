@@ -1070,3 +1070,88 @@ drop trigger if exists manuscript_health_touch_updated_at on public.manuscript_h
 create trigger manuscript_health_touch_updated_at
   before update on public.manuscript_health
   for each row execute function public.touch_updated_at();
+
+
+-- ---------------------------------------------------------------------------
+-- Manuscript intelligence: VoiceGuard and the story bible
+-- ---------------------------------------------------------------------------
+--
+-- Two jsonb artifacts live on the manuscript row itself, because they describe
+-- the book rather than a pass over it: an author has one Writing DNA profile
+-- and one story bible per manuscript, and both are read whole by the workspace
+-- and written whole by the worker. Regenerating either replaces it. That is the
+-- same reasoning this file already gives for `chapters`.
+--
+-- The *checks* against them are records of a pass, not properties of the book,
+-- so they get their own table further down.
+alter table public.manuscripts
+  add column if not exists voice_profile jsonb;
+
+alter table public.manuscripts
+  add column if not exists story_bible jsonb;
+
+-- The job store now runs four passes rather than one, so a row has to say which
+-- one it is. Defaulted rather than required, so every existing row -- all of
+-- them health scans -- is already correct and needs no backfill.
+alter table public.manuscript_health
+  add column if not exists kind text not null default 'health';
+
+-- The result of a non-health job. Null for a health scan, whose result is
+-- unpacked into the headline columns above so the dashboard can sort on them.
+alter table public.manuscript_health
+  add column if not exists payload jsonb;
+
+-- Dropped and re-added rather than `add constraint if not exists`, which
+-- Postgres does not have. This is what keeps the file re-runnable: a second run
+-- replaces the constraint instead of failing on it.
+alter table public.manuscript_health
+  drop constraint if exists manuscript_health_kind_check;
+alter table public.manuscript_health
+  add constraint manuscript_health_kind_check
+  check (kind in ('health', 'voice', 'bible', 'voice_check'));
+
+-- One row per VoiceGuard preservation check.
+--
+-- A table rather than a column on the manuscript, for the same reason
+-- manuscript_health is a table: a check is an event with a timestamp and a
+-- cost, not a property of the book. An author who checks their voice after
+-- every editing round wants the history, and the row is what lets them see that
+-- the score fell after the second pass rather than after the first.
+--
+-- Written by the backend with the service role, like every other pass here, so
+-- there is a select policy and nothing else: an author reads their own checks
+-- and cannot forge, edit or delete one. `deviations` and `diff` go to jsonb
+-- because they are read whole and never queried into; `score` gets a column
+-- because it is the one number worth ordering by.
+create table if not exists public.manuscript_voice_checks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  manuscript_id uuid references public.manuscripts (id) on delete cascade,
+  score integer check (score between 0 and 100),
+  verdict text,
+  -- [{"metric": "mean_sentence_length", "expected": 14.2, "actual": 26.1, ...}]
+  deviations jsonb not null default '[]'::jsonb,
+  -- Per-chapter scores, so a drift can be traced to the chapters it is in.
+  diff jsonb not null default '[]'::jsonb,
+  ai_available boolean not null default false,
+  ai_model text,
+  ai_cost_usd numeric(10, 6) not null default 0,
+  ai_credits integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists manuscript_voice_checks_manuscript_recent_idx
+  on public.manuscript_voice_checks (manuscript_id, created_at desc);
+
+alter table public.manuscript_voice_checks enable row level security;
+
+drop policy if exists "read own voice checks" on public.manuscript_voice_checks;
+create policy "read own voice checks" on public.manuscript_voice_checks
+  for select using ((select auth.uid()) = user_id);
+
+drop trigger if exists manuscript_voice_checks_touch_updated_at
+  on public.manuscript_voice_checks;
+create trigger manuscript_voice_checks_touch_updated_at
+  before update on public.manuscript_voice_checks
+  for each row execute function public.touch_updated_at();

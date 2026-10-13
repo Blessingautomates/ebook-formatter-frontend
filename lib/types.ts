@@ -223,6 +223,237 @@ export interface HealthJobStatus {
   updated_at: string | null;
   /** Present once `status` is "succeeded". */
   report: HealthReport | null;
+  /**
+   * Which pass this job is. One poll route serves all four kinds, so a caller
+   * reads `kind` before it knows which field carries the result.
+   */
+  kind: JobKind;
+  /** The result of a non-health job. A health scan unpacks into `report`. */
+  payload: Record<string, unknown> | null;
+}
+
+export type JobKind = "health" | "voice" | "bible" | "voice_check";
+
+/* -------------------------------------------------------------------------- */
+/* VoiceGuard — the Writing DNA profile and the preservation check             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The numbers behind a profile. All of them are measured from the text rather
+ * than asked of a model, so two runs over the same manuscript agree.
+ *
+ * Every field is a *proxy* for something a reader would name by feeling.
+ * `descriptive_depth` counts simile markers and adverbs per 1000 words, which
+ * is not "how descriptive is this, really". The proxies are stable and
+ * comparable, which is what the preservation check needs; they are not a
+ * verdict on the prose.
+ */
+export interface StyleMetrics {
+  word_count: number;
+  sentence_count: number;
+  mean_sentence_length: number;
+  /** Coefficient of variation, so a chapter can be compared with a book. */
+  sentence_length_variation: number;
+  short_sentence_ratio: number;
+  long_sentence_ratio: number;
+  dialogue_ratio: number;
+  type_token_ratio: number;
+  long_word_ratio: number;
+  mean_word_length: number;
+  first_person_rate: number;
+  second_person_rate: number;
+  third_person_rate: number;
+  pov: string;
+  emotion_rate: number;
+  exclamation_rate: number;
+  question_rate: number;
+  descriptive_depth: number;
+  simile_rate: number;
+}
+
+/** The seven labels the author actually reads. */
+export interface VoiceLabels {
+  tone: string;
+  sentence_style: string;
+  pov: string;
+  dialogue_frequency: string;
+  vocabulary_complexity: string;
+  emotional_intensity: string;
+  descriptive_depth: string;
+}
+
+export interface VoiceProfile {
+  version: number;
+  generated_at: string;
+  metrics: StyleMetrics;
+  labels: VoiceLabels;
+  /** "measured" when the AI half did not run, "measured+ai" when it did. */
+  label_source: string;
+  summary: string;
+  /** Quotes the profile was built from, each with a real line number. */
+  exemplars: { quote: string; chapter: number; line_number: number }[];
+  source_word_count: number;
+  ai_available: boolean;
+  ai_note: string | null;
+  ai_model: string | null;
+  ai_cost_usd: number;
+  ai_credits: number;
+}
+
+export type DeviationSeverity = "high" | "medium" | "low";
+
+/**
+ * One metric that moved outside the profile's tolerance band.
+ *
+ * `expected` is the profile's own value and `actual` the candidate's, so the
+ * panel can draw the two side by side rather than describe the gap in prose.
+ */
+export interface VoiceDeviation {
+  metric: string;
+  label: string;
+  severity: DeviationSeverity;
+  expected: number;
+  actual: number;
+  /** How far the metric may move before it counts as a deviation at all. */
+  tolerance: number;
+  direction: "up" | "down";
+  note: string;
+  unit: string;
+}
+
+/** One chapter's own score, so a drift can be traced to where it lives. */
+export interface VoiceDiffRow {
+  /** The chapter title, e.g. "Chapter 3", or "Front Matter". */
+  chapter: string;
+  /** False when the chapter is too short for its own numbers to mean anything. */
+  scored: boolean;
+  score: number | null;
+  word_count: number;
+  note: string | null;
+  deviations: VoiceDeviation[];
+}
+
+export interface VoiceCheck {
+  available: boolean;
+  /** Why the check could not run, when `available` is false. */
+  note: string | null;
+  score: number | null;
+  verdict: string | null;
+  baseline_word_count: number;
+  candidate_word_count: number;
+  metrics: StyleMetrics;
+  baseline_metrics: StyleMetrics;
+  deviations: VoiceDeviation[];
+  chapters: VoiceDiffRow[];
+  checked_at: string;
+  /** Passages a model judged to have drifted. Advisory; never moves `score`. */
+  examples: VoiceExample[];
+  ai_available: boolean;
+  ai_note: string | null;
+  ai_model: string | null;
+  ai_cost_usd: number;
+  ai_credits: number;
+}
+
+/**
+ * One passage the model says no longer sounds like the author.
+ *
+ * `located` is the honest part: the quote is searched for in the manuscript, and
+ * when it is not found verbatim the row says so and carries no line number,
+ * rather than sending the author to a line the model made up.
+ */
+export interface VoiceExample {
+  severity: DeviationSeverity;
+  message: string;
+  chapter: number;
+  line_number: number;
+  context: string;
+  located: boolean;
+  quote: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Continuity Checker — the story bible and its contradictions                 */
+/* -------------------------------------------------------------------------- */
+
+export interface BibleAttribute {
+  field: string;
+  value: string;
+  /** The chapter title, e.g. "Chapter 3", or "Front Matter". */
+  chapter: string;
+  line_number: number;
+  quote: string;
+  /** "rules" when the deterministic pass found it, "ai" when the model did. */
+  source: string;
+  /**
+   * False for a field the detector recorded but has no rule to compare — a
+   * free-text field like "occupation". Those are listed but never flagged.
+   */
+  comparable: boolean;
+}
+
+export interface BibleEntity {
+  id: string;
+  kind: BibleEntityKind;
+  /** The kind as the backend spells it for display, e.g. "Character". */
+  kind_label: string;
+  name: string;
+  aliases: string[];
+  mention_count: number;
+  chapters: number[];
+  attributes: BibleAttribute[];
+  source: string;
+}
+
+/**
+ * One detail two chapters disagree about. Deliberately mirrors `HealthFinding`
+ * field for field so a single row component renders both kinds of flag.
+ *
+ * Never auto-fixable: only the author knows which of the competing values is
+ * the one they meant.
+ */
+export interface Contradiction {
+  id: string;
+  category: "continuity";
+  kind: string;
+  entity: string;
+  entity_id: string;
+  field: string;
+  severity: FindingSeverity;
+  message: string;
+  /** The chapter title, e.g. "Chapter 3", or "Front Matter". */
+  chapter: string;
+  line_number: number;
+  context: string;
+  suggestion: string | null;
+  original: null;
+  replacement: null;
+  fixable: false;
+  /** Every competing value, each with the chapter and line it came from. */
+  values: {
+    value: string;
+    chapter: string;
+    line_number: number;
+    quote: string;
+    /** Other places the same value appears, beyond the first mention. */
+    also_at: { chapter: string; line_number: number }[];
+  }[];
+}
+
+export type BibleEntityKind = "character" | "location" | "prop" | "timeline";
+
+export interface StoryBible {
+  generated_at: string;
+  entities: BibleEntity[];
+  contradictions: Contradiction[];
+  /** Fields the detector recorded but could not compare, and why. */
+  skipped_fields: { entity: string; field: string; reason: string }[];
+  ai_available: boolean;
+  ai_note: string | null;
+  ai_model: string | null;
+  ai_calls: number;
+  ai_cost_usd: number;
+  ai_credits: number;
 }
 
 export interface ExportSettings {

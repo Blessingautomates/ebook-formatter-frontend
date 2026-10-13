@@ -165,6 +165,118 @@ export async function readHealth(jobId: string): Promise<HealthJobStatus> {
   return (await response.json()) as HealthJobStatus;
 }
 
+/**
+ * The arguments every manuscript-intelligence pass takes.
+ *
+ * All three passes accept a manuscript the same three ways, so they share one
+ * argument type rather than repeating it. `manuscriptId` is what makes a result
+ * *stick*: with it the worker writes the result onto the book's row, without it
+ * the result comes back and is discarded.
+ */
+export interface IntelligenceArgs {
+  /** Preferred: text already in hand, so a novel is not uploaded again. */
+  text?: string | null;
+  /** Used when the text is not to hand. */
+  file?: File | null;
+  title?: string;
+  author?: string;
+  genre?: Genre;
+  manuscriptId?: string;
+}
+
+function intelligenceBody({
+  text,
+  file,
+  title,
+  author,
+  genre,
+  manuscriptId,
+}: IntelligenceArgs): FormData {
+  const body = new FormData();
+
+  if (text && text.trim()) {
+    body.append("text", text);
+  } else if (file) {
+    body.append("file", file);
+  } else {
+    throw new Error("There is no manuscript to read.");
+  }
+
+  if (title?.trim()) body.append("title", title.trim());
+  if (author?.trim()) body.append("author", author.trim());
+  if (genre) body.append("genre", genre);
+  if (manuscriptId) body.append("manuscript_id", manuscriptId);
+
+  return body;
+}
+
+async function startIntelligence(
+  path: string,
+  args: IntelligenceArgs,
+  extra?: Record<string, string>,
+): Promise<HealthJobAccepted> {
+  const body = intelligenceBody(args);
+  for (const [key, value] of Object.entries(extra ?? {})) {
+    body.append(key, value);
+  }
+
+  const response = await fetch(path, {
+    method: "POST",
+    body,
+    headers: await authHeader(),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return (await response.json()) as HealthJobAccepted;
+}
+/**
+ * Measure the author's Writing DNA. Poll with `readIntelligence`.
+ */
+export function startVoiceProfile(
+  args: IntelligenceArgs,
+): Promise<HealthJobAccepted> {
+  return startIntelligence("/api/manuscript/voice-profile", args);
+}
+
+/**
+ * Extract the story bible and the contradictions in it. Poll with
+ * `readIntelligence`.
+ */
+export function startStoryBible(
+  args: IntelligenceArgs,
+): Promise<HealthJobAccepted> {
+  return startIntelligence("/api/manuscript/story-bible", args);
+}
+
+/**
+ * Score a candidate text against the profile already stored on a book.
+ *
+ * `manuscriptId` is required here and means something different from the
+ * same field on the two starters above: it selects the profile to compare
+ * against, so a text sent without one has nothing to be measured against.
+ * The backend answers 400 with a readable message when the book has no
+ * profile yet.
+ */
+export function startVoiceCheck({
+  manuscriptId,
+  ...args
+}: IntelligenceArgs & { manuscriptId: string }): Promise<HealthJobAccepted> {
+  return startIntelligence("/api/manuscript/voice-check", args, {
+    manuscript_id: manuscriptId,
+  });
+}
+
+/**
+ * Read any intelligence job. Pair with the three starters above.
+ *
+ * One poll route serves all four job kinds - a health scan, a voice profile,
+ * a story bible and a voice check - so the caller reads `kind` to know which
+ * field holds the result. A job belonging to another account comes back 404,
+ * not 403, so this cannot be used to test whether a job id is real.
+ */
+export async function readIntelligence(jobId: string): Promise<HealthJobStatus> {
+  return readHealth(jobId);
+}
+
 function filenameFrom(response: Response, fallback: string): string {
   const header = response.headers.get("content-disposition") ?? "";
   const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(header);

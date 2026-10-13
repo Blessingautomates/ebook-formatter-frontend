@@ -10,6 +10,7 @@ import {
   SlidersIcon,
   TemplateIcon,
   TranslateIcon,
+  VoiceIcon,
 } from "./icons";
 
 /**
@@ -45,6 +46,13 @@ export const NAV_ITEMS: NavItem[] = [
     label: "New Book",
     description: "Upload a manuscript and start formatting",
     icon: PlusIcon,
+  },
+  {
+    href: "/dashboard/intelligence",
+    label: "Manuscript Intelligence",
+    description:
+      "VoiceGuard voice preservation, writing style, story bible, characters, continuity and timeline checks",
+    icon: VoiceIcon,
   },
   {
     href: "/dashboard/credits",

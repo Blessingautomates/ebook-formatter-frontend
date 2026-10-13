@@ -278,6 +278,25 @@ export function PlayIcon(props: IconProps) {
   );
 }
 
+export function ContinuityIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="7" cy="7" r="2.75" />
+      <circle cx="7" cy="17" r="2.75" />
+      <path d="M9.6 8.4 18 15.5M9.6 15.6 18 8.5" />
+      <path d="M20 12h.01" />
+    </Icon>
+  );
+}
+
+export function VoiceIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3.5 12h2M8 6.5v11M12 9.5v5M16 4.5v15M20.5 10.5v3" />
+    </Icon>
+  );
+}
+
 export function ChatIcon(props: IconProps) {
   return (
     <Icon {...props}>

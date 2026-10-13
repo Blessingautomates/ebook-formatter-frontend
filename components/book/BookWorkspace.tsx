@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { AdvancedSettings } from "@/components/AdvancedSettings";
@@ -10,6 +11,7 @@ import { GenreSelector } from "@/components/GenreSelector";
 import { CommentsDrawer } from "@/components/collab/CommentsDrawer";
 import { CoverDrawer } from "@/components/cover/CoverDrawer";
 import { ApprovalModal } from "@/components/publish/ApprovalModal";
+import { WorkspaceIntelligenceCard } from "@/components/intelligence/WorkspaceIntelligenceCard";
 import { Notice, Spinner, Step } from "@/components/primitives";
 import {
   ChatIcon,
@@ -695,6 +697,14 @@ export function BookWorkspace({
           <Notice>Analyze a manuscript to enable export.</Notice>
         )}
       </Step>
+
+      {/*
+        A sibling of the five steps rather than a sixth: the Writing DNA and the
+        story bible are things to consult while writing, not stages in the
+        upload → export order, and they render from the row rather than from the
+        manuscript in hand — so a book opened from the grid shows them too.
+      */}
+      <WorkspaceIntelligenceCard record={openProject} bookId={activeId} />
 
       {/*
         Mounted at the end of the workspace rather than inside a step: all three
